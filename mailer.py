@@ -419,12 +419,17 @@ def send(html: str, date_str: str, subject: str = None, excel_path: str = None,
     from email.mime.base import MIMEBase
     from email import encoders
 
-    host  = os.getenv("SMTP_HOST", "smtp.gmail.com")
-    port  = int(os.getenv("SMTP_PORT", "587"))
-    user  = os.getenv("SMTP_USER")
-    pw    = os.getenv("SMTP_PASS")
-    from_ = os.getenv("MAIL_FROM", user)
-    to_   = mail_to or os.getenv("MAIL_TO")
+    from email.header import Header
+    from email.utils import formataddr
+
+    host      = os.getenv("SMTP_HOST", "smtp.gmail.com")
+    port      = int(os.getenv("SMTP_PORT", "587"))
+    user      = os.getenv("SMTP_USER")
+    pw        = os.getenv("SMTP_PASS")
+    from_addr = os.getenv("MAIL_FROM", user)
+    from_name = os.getenv("MAIL_FROM_NAME", "")
+    from_     = formataddr((str(Header(from_name, "utf-8")), from_addr)) if from_name else from_addr
+    to_       = mail_to or os.getenv("MAIL_TO")
 
     if not all([user, pw, to_]):
         print("  [메일 미설정] .env에 SMTP_USER, SMTP_PASS, MAIL_TO 필요")
