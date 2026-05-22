@@ -11,3 +11,8 @@ test_report.xlsx
 *.hwpx
 nara_*/
 nara_docs_*/
+
+# PyInstaller
+dist/
+build/
+*.spec
