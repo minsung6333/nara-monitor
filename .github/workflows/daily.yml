@@ -1,0 +1,47 @@
+name: 나라장터 Daily Monitor
+
+on:
+  schedule:
+    - cron: '0 0 * * 1-5'  # UTC 00:00 (KST 09:00), 평일만
+  workflow_dispatch:         # 수동 실행 버튼
+
+jobs:
+  monitor:
+    runs-on: ubuntu-latest
+    timeout-minutes: 90
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+          cache: 'pip'
+
+      - name: Install dependencies
+        run: pip install -r requirements.txt
+
+      - name: Run monitor
+        env:
+          NARA_SERVICE_KEY: ${{ secrets.NARA_SERVICE_KEY }}
+          OPENAI_API_KEY:   ${{ secrets.OPENAI_API_KEY }}
+          SMTP_HOST:        ${{ secrets.SMTP_HOST }}
+          SMTP_PORT:        ${{ secrets.SMTP_PORT }}
+          SMTP_USER:        ${{ secrets.SMTP_USER }}
+          SMTP_PASS:        ${{ secrets.SMTP_PASS }}
+          MAIL_FROM:        ${{ secrets.MAIL_FROM }}
+          MAIL_TO:          ${{ secrets.MAIL_TO }}
+        run: python -u main.py
+
+      - name: Upload report
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: report-${{ github.run_number }}-${{ github.run_id }}
+          path: |
+            report_*.html
+            report_*.xlsx
+            customers/
+          retention-days: 30

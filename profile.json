@@ -1,0 +1,67 @@
+{
+  "company_name": "주식회사 클라비 (ClaBi Co., Ltd.)",
+  "description": "생성형AI·클라우드 기반 AX(AI전환)·DX(디지털전환) 전문기업. 산업특화 LLM/RAG 솔루션 구축·운영, 클라우드 MSP, SaaS 플랫폼을 공공·민간에 제공",
+
+  "business_areas": [
+    "산업특화 생성형AI 모델 구축·운영 (RAG 기반 AI 챗봇·서비스, HyperCLOVA X / LG EXAONE 활용)",
+    "클라우드 MSP — 마이그레이션, 컨설팅, 매니지드 서비스 (NCP Premium/PCP 파트너)",
+    "AI/클라우드 플랫폼·솔루션 개발 (MLOps, SaaS Builder X, ClaRIO RAG 솔루션, DX 솔루션)",
+    "AI SaaS 구독 서비스 (EduOne X, AI 영농일지, AI 도서큐레이션, AI 보도자료 등)",
+    "AI Agent 개발 (ClaRIO-Cowork Agent, NL2SQL Agent 등 공공·업무 자동화)",
+    "빅데이터 플랫폼 구축 및 데이터 전처리 (ClaRIO-Doc OCR 솔루션)",
+    "GPUaaS 서비스 및 On-Premise AI 인프라 구축",
+    "CSAP·SaaS 전환 컨설팅 및 디지털서비스 전문계약 제도 수의계약"
+  ],
+
+  "core_technologies": [
+    "LLM/sLLM: HyperCLOVA X, LG EXAONE, ClaBian-DASH (경량 구축형)",
+    "RAG (Retrieval-Augmented Generation): LangChain, LangGraph, Hybrid 검색, Vector DB",
+    "MLOps 플랫폼: 데이터 전처리–임베딩–응답생성–성능평가–모니터링 End-to-End",
+    "클라우드 네이티브: Kubernetes, CI/CD, Docker, MSA, NCP(Naver Cloud Platform)",
+    "AI 평가 프레임워크: RAGAS 기반 정량·정성 평가, Human-in-the-Loop (ClaRIO-EVA)",
+    "OCR·데이터 전처리: PDF·이미지 파싱, 구조화 데이터 생성 (ClaRIO-Doc)",
+    "SaaS 플랫폼: SaaS Builder X (멀티테넌시, CSAP 인증, 과금·빌링 자동화)",
+    "보안: ISO/IEC 27001, ISO/IEC 42001, CSAP 인증 지원, RBAC, 개인정보보호"
+  ],
+
+  "certifications": [
+    "과학기술정보통신부 디지털서비스 전문사업자 (IaaS, 클라우드 지원서비스, Naver Works)",
+    "벤처기업 인증 / 이노비즈(기술혁신형중소기업) / 메인비즈(경영혁신형중소기업)",
+    "ISO/IEC 42001 (인공지능경영시스템) / ISO/IEC 27001 (정보보안)",
+    "ISO 9001:2015 (품질경영) / ISO 14001:2015 (환경경영)",
+    "기업부설연구소 인증 / 전문연구사업자 (과기정통부)",
+    "소프트웨어사업자 / 경쟁입찰참가자격 / 직접생산확인증명서",
+    "특허 등록 2건 + 출원 9건 (생성형AI 서비스, SaaS 클라우드, RAG, MLOps 등)",
+    "NAVER Cloud Premium Partner / PCP Partner / AI Alliance Partner"
+  ],
+
+  "target_sectors": [
+    "중앙부처·공공기관 (NIA, NIPA, 통계청, 기획재정부, 문체부, 금감원 등)",
+    "지자체·지방공공기관 (세종시, 과천시, 인천경제청 등)",
+    "교육기관·교육청 (경북·경기·전남·인천·서울·강원·충남 교육청 등)",
+    "공기업·준정부기관 (한국공항공사, 인천항만공사, 한국해양진흥공사, 한국조폐공사 등)",
+    "민간 대기업·중견기업 (금융, 제조, 농업, 출판, 물류 등 AI 전환 수요처)"
+  ],
+
+  "references": [
+    "범정부 초거대AI 공통기반플랫폼 (NIA)",
+    "통계청 초거대AI 통계챗봇 / 기획재정부 최근경제동향 초안 서비스",
+    "소상공인시장진흥공단 상권·경영통계 생성형AI / 한국재정정보원 보조금 AI",
+    "경기도 교육청·서울교육청·경북교육청·전남교육청 등 다수 교육 AI 서비스",
+    "세종특별자치시 클라우드 통합운영 / 한국해양진흥공사·한국조폐공사 클라우드",
+    "한국고용정보원 클라우드 네이티브 전환 전략 수립",
+    "산업특화 AI 모델 100건+ 레퍼런스 / 클라우드 고객 300개+"
+  ],
+
+  "exclusions": [
+    "AI·클라우드 기술과 무관한 단순 물품 구매·하드웨어 공급",
+    "토목·건설·시설 공사",
+    "단순 인력 파견 용역 (SW 개발·AI와 무관한 운영 인력 공급)",
+    "오프라인 행사·교육 단순 운영 (AI 강사 파견 없는 시설 운영)",
+    "인쇄·홍보물 제작 등 비IT 용역"
+  ],
+
+  "min_amount": 0,
+
+  "notes": "디지털서비스 전문계약제도 인증 보유 → 공공기관 수의계약 약 2주 내 가능 (금액 무관). 네이버클라우드(NCP) 기반 사업 최우선 대응. 컨소시엄·하도급 참여 가능 (대형 SI에서 AI·클라우드 파트). CSAP 인증 관련 컨설팅·구축 사업 적극 지원 가능."
+}

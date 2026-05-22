@@ -1,0 +1,13 @@
+.env
+__pycache__/
+*.pyc
+*.pyo
+logs/
+report_*.html
+report_*.xlsx
+test_report.xlsx
+*.pdf
+*.hwp
+*.hwpx
+nara_*/
+nara_docs_*/
