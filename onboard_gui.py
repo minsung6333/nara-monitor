@@ -21,7 +21,16 @@ load_dotenv()
 ctk.set_appearance_mode("light")
 ctk.set_default_color_theme("blue")
 
-REPO_DIR = Path(__file__).parent
+def _find_repo_dir() -> Path:
+    start = Path(sys.executable).parent if getattr(sys, "frozen", False) else Path(__file__).parent
+    current = start
+    while current != current.parent:
+        if (current / ".git").exists():
+            return current
+        current = current.parent
+    return start
+
+REPO_DIR = _find_repo_dir()
 
 
 # ── 유틸 ──────────────────────────────────────────────────────
@@ -60,9 +69,10 @@ def _extract_profile(pdf_path: str, log) -> dict:
     client = OpenAI(api_key=os.getenv("OPENAI_API_KEY"))
 
     doc = fitz.open(pdf_path)
-    text = "\n\n".join(doc[i].get_text() for i in range(min(len(doc), 30)))[:60000]
+    page_count = min(len(doc), 30)
+    text = "\n\n".join(doc[i].get_text() for i in range(page_count))[:60000]
     doc.close()
-    log(f"  PDF {len(doc)}페이지 읽기 완료 → LLM 분석 중...")
+    log(f"  PDF {page_count}페이지 읽기 완료 → LLM 분석 중...")
 
     try:
         resp = client.chat.completions.create(

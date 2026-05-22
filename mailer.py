@@ -438,13 +438,13 @@ def send(html: str, date_str: str, subject: str = None, excel_path: str = None,
         if port == 465:
             with smtplib.SMTP_SSL(host, port) as smtp:
                 smtp.login(user, pw)
-                smtp.sendmail(from_, to_.split(","), msg.as_string())
+                smtp.sendmail(from_, [a.strip() for a in to_.split(",")], msg.as_string())
         else:
             with smtplib.SMTP(host, port) as smtp:
                 smtp.ehlo()
                 smtp.starttls()
                 smtp.login(user, pw)
-                smtp.sendmail(from_, to_.split(","), msg.as_string())
+                smtp.sendmail(from_, [a.strip() for a in to_.split(",")], msg.as_string())
         print(f"  [발송 완료] → {to_}" + (f" (첨부: {os.path.basename(excel_path)})" if excel_path else ""))
         return True
     except Exception as e:
