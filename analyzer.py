@@ -7,6 +7,7 @@
 import json
 import os
 import tempfile
+from concurrent.futures import ThreadPoolExecutor, as_completed
 from openai import OpenAI
 from dotenv import load_dotenv
 
@@ -18,6 +19,7 @@ client = OpenAI(api_key=os.getenv("OPENAI_API_KEY"))
 
 MODEL_SCREEN = "gpt-5.4"
 MODEL_ANALYZE = "gpt-5.4"
+MAX_WORKERS   = 5   # 병렬 분석 동시 처리 수
 
 # ── 프롬프트 ──────────────────────────────────────────────────
 
@@ -203,18 +205,33 @@ def run_pipeline(
     if not candidates:
         return ([], screened) if return_screened else []
 
-    print(f"\n[2단계] 문서 분석 — {len(candidates)}건")
-    if dest_dir is None:
-        dest_dir = tempfile.mkdtemp(prefix="nara_docs_")
+    print(f"\n[2단계] 문서 분석 — {len(candidates)}건 (병렬 {MAX_WORKERS}개)")
+    base_dir = dest_dir or tempfile.mkdtemp(prefix="nara_docs_")
 
-    results = []
-    for i, notice in enumerate(candidates, 1):
+    def _analyze_one(args):
+        idx, total, notice = args
+        # 스레드별 독립 디렉터리로 파일 충돌 방지
+        sub = os.path.join(base_dir, f"n{idx:03d}")
+        os.makedirs(sub, exist_ok=True)
         has_files = bool(notice.get("files"))
-        print(f"  [{i}/{len(candidates)}] {notice['title'][:50]}... (파일: {'있음' if has_files else '없음'})")
-        analyzed = analyze_notice(notice, profile, dest_dir)
+        print(f"  [{idx}/{total}] {notice['title'][:45]}... (파일: {'있음' if has_files else '없음'})")
+        analyzed = analyze_notice(notice, profile, sub)
         score = analyzed.get("analysis", {}).get("score", 0)
-        print(f"    → score: {score} / {analyzed.get('analysis', {}).get('verdict', '?')}")
-        results.append(analyzed)
+        print(f"    [{idx}] → {score}점 / {analyzed.get('analysis', {}).get('verdict', '?')}")
+        return analyzed
+
+    total = len(candidates)
+    results = []
+    with ThreadPoolExecutor(max_workers=MAX_WORKERS) as executor:
+        futures = {
+            executor.submit(_analyze_one, (i, total, notice)): i
+            for i, notice in enumerate(candidates, 1)
+        }
+        for future in as_completed(futures):
+            try:
+                results.append(future.result())
+            except Exception as e:
+                print(f"  [분석 오류] {e}")
 
     results.sort(key=lambda x: x.get("analysis", {}).get("score", 0), reverse=True)
     print(f"\n파이프라인 완료: {len(results)}건 분석")
