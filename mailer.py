@@ -617,17 +617,10 @@ if __name__ == "__main__":
     from config import KEYWORDS
     profile = load_profile()
 
-    today = datetime.now()
-    is_monday = today.weekday() == 0  # 월요일
-    days_back = 3 if is_monday else 1
-
-    notices = collect(date_str, days_back=days_back)
+    notices = collect(date_str, days_back=1)
     results, screened_all = run_pipeline(notices, profile, return_screened=True)
 
     subject = None
-    if is_monday:
-        date_label = f"{date_str[:4]}.{date_str[4:6]}.{date_str[6:]}"
-        subject = f"[나라장터 모니터] {date_label} 주간 AI 공고 분석 리포트 (금~월)"
 
     send_report(results, date_str, total_collected=len(notices),
                 screened_all=screened_all,

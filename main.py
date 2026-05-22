@@ -81,7 +81,7 @@ if __name__ == "__main__":
     date_arg = sys.argv[1] if len(sys.argv) > 1 else None
     date_str = date_arg or datetime.now().strftime("%Y%m%d")
 
-    days_back = 3 if datetime.now().weekday() == 0 else 1
+    days_back = 1
 
     customers = _load_customers()
     if not customers:
