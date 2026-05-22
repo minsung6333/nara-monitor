@@ -47,25 +47,40 @@ def build_html(results: list[dict], date_str: str, total_collected: int,
     return f"""<!DOCTYPE html>
 <html lang="ko">
 <head><meta charset="UTF-8"><meta name="viewport" content="width=device-width,initial-scale=1.0">
-<title>나라장터 AI 공고 모니터링</title></head>
+<title>나라장터 AI 공고 모니터링</title>
+<style>
+@media screen and (max-width:620px){{
+  .wrap{{width:100%!important;}}
+  .pad{{padding-left:16px!important;padding-right:16px!important;}}
+  .hpad{{padding:20px 16px 16px!important;}}
+  .mob-block{{display:block!important;width:100%!important;}}
+  .mob-badge{{width:25%!important;}}
+  .score-num{{font-size:24px!important;}}
+  .title-txt{{font-size:14px!important;}}
+  .meta-txt{{font-size:12px!important;}}
+  .col2-left{{display:block!important;width:100%!important;padding-right:0!important;padding-bottom:10px!important;}}
+  .col2-right{{display:block!important;width:100%!important;padding-left:0!important;border-left:none!important;}}
+}}
+</style>
+</head>
 <body style="margin:0;padding:0;background:#f0f2f5;font-family:'Apple SD Gothic Neo','Malgun Gothic',sans-serif;">
 
-<table width="100%" cellpadding="0" cellspacing="0" style="background:#f0f2f5;padding:24px 0;">
+<table width="100%" cellpadding="0" cellspacing="0" style="background:#f0f2f5;padding:16px 0;">
 <tr><td align="center">
-<table width="680" cellpadding="0" cellspacing="0" style="max-width:680px;width:100%;">
+<table class="wrap" width="680" cellpadding="0" cellspacing="0" style="max-width:680px;width:100%;">
 
   <!-- 헤더 -->
-  <tr><td style="background:linear-gradient(135deg,#1a1f36 0%,#2d3561 100%);border-radius:12px 12px 0 0;padding:32px 40px 24px;">
+  <tr><td class="hpad" style="background:linear-gradient(135deg,#1a1f36 0%,#2d3561 100%);border-radius:12px 12px 0 0;padding:28px 36px 20px;">
     <div style="color:#7c8cf8;font-size:11px;letter-spacing:2px;text-transform:uppercase;margin-bottom:6px;">NARA MONITOR</div>
-    <div style="color:#fff;font-size:22px;font-weight:700;margin-bottom:4px;">나라장터 AI 공고 분석 리포트</div>
-    <div style="color:#a0aec0;font-size:13px;">{date_label} 기준</div>
+    <div style="color:#fff;font-size:20px;font-weight:700;margin-bottom:4px;">나라장터 AI 공고 분석 리포트</div>
+    <div style="color:#a0aec0;font-size:12px;">{date_label} 기준</div>
   </td></tr>
 
   <!-- 인사말 -->
   {greeting}
 
   <!-- 요약 배지 -->
-  <tr><td style="background:#fff;padding:16px 40px 20px;border-bottom:1px solid #e8ecf0;">
+  <tr><td class="pad" style="background:#fff;padding:16px 36px 20px;border-bottom:1px solid #e8ecf0;">
     <table width="100%" cellpadding="0" cellspacing="0"><tr>
       {_badge("수집", total_collected, "#4a5568", "건")}
       {_badge("즉시검토", len(high), "#c0392b", "건")}
@@ -75,7 +90,7 @@ def build_html(results: list[dict], date_str: str, total_collected: int,
   </td></tr>
 
   <!-- 본문 -->
-  <tr><td style="background:#fff;padding:16px 40px 32px;">
+  <tr><td class="pad" style="background:#fff;padding:16px 36px 32px;">
     {body}
   </td></tr>
 
@@ -98,7 +113,7 @@ def _greeting(company_name: str, date_label: str, kw_str: str, total: int) -> st
     name_part = f"<b>{company_name}</b> 님" if company_name else "안녕하세요"
     kw_part   = f"<b>{kw_str}</b> 키워드로" if kw_str else ""
     return f"""
-  <tr><td style="background:#fff;padding:20px 40px 0;">
+  <tr><td class="pad" style="background:#fff;padding:20px 36px 0;">
     <div style="font-size:14px;color:#2d3748;line-height:1.9;border-left:3px solid #7c8cf8;padding-left:14px;">
       안녕하세요, {name_part}.<br>
       <b>{date_label}</b> 나라장터에 등록된 공고 중 {kw_part} 검색·분석한 결과를 전달드립니다.<br>
@@ -158,10 +173,10 @@ def _high_card(r: dict) -> str:
         <div style="font-size:16px;font-weight:700;color:#1a202c;line-height:1.5;margin-bottom:12px;">{title}</div>
 
         <!-- 1줄: 기관 + 금액 (강조) -->
-        <div style="margin-bottom:8px;display:flex;align-items:center;gap:16px;">
-          <span style="font-size:15px;font-weight:700;color:#1a202c;">🏢 {agency}</span>
-          <span style="font-size:17px;font-weight:800;color:#c0392b;">💰 {amt_str}</span>
-        </div>
+        <table width="100%" cellpadding="0" cellspacing="0" style="margin-bottom:8px;"><tr>
+          <td style="font-size:15px;font-weight:700;color:#1a202c;">🏢 {agency}</td>
+          <td style="font-size:16px;font-weight:800;color:#c0392b;text-align:right;white-space:nowrap;">💰 {amt_str}</td>
+        </tr></table>
 
         <!-- 2줄: 마감일 배지 -->
         <div style="margin-bottom:12px;">
@@ -182,11 +197,11 @@ def _high_card(r: dict) -> str:
       <!-- 강점 / 리스크 -->
       <table width="100%" cellpadding="0" cellspacing="0" style="padding:0 20px 12px;">
       <tr>
-        <td width="50%" style="vertical-align:top;padding:12px 8px 0 0;">
+        <td class="col2-left" width="50%" style="vertical-align:top;padding:12px 8px 0 0;">
           <div style="font-size:12px;font-weight:700;color:#27ae60;margin-bottom:6px;">✅ 강점</div>
           <ul style="margin:0;padding-left:16px;font-size:12px;color:#2d3748;line-height:1.7;">{match_html}</ul>
         </td>
-        <td width="50%" style="vertical-align:top;padding:12px 0 0 8px;border-left:1px dashed #fde8e8;">
+        <td class="col2-right" width="50%" style="vertical-align:top;padding:12px 0 0 8px;border-left:1px dashed #fde8e8;">
           <div style="font-size:12px;font-weight:700;color:#e74c3c;margin-bottom:6px;">⚠️ 리스크</div>
           <ul style="margin:0;padding-left:16px;font-size:12px;color:#2d3748;line-height:1.7;">{gap_html}</ul>
         </td>
@@ -288,11 +303,11 @@ def _card(r: dict, accent: str, bg: str) -> str:
       <!-- 강점 / 리스크 -->
       <table width="100%" cellpadding="0" cellspacing="0" style="margin-top:14px;">
       <tr>
-        <td width="50%" style="vertical-align:top;padding-right:8px;">
+        <td class="col2-left" width="50%" style="vertical-align:top;padding-right:8px;">
           <div style="font-size:12px;font-weight:700;color:#27ae60;margin-bottom:6px;">✅ 강점</div>
           <ul style="margin:0;padding-left:16px;font-size:12px;line-height:1.7;">{match_html}</ul>
         </td>
-        <td width="50%" style="vertical-align:top;padding-left:8px;">
+        <td class="col2-right" width="50%" style="vertical-align:top;padding-left:8px;">
           <div style="font-size:12px;font-weight:700;color:#e74c3c;margin-bottom:6px;">⚠️ 리스크</div>
           <ul style="margin:0;padding-left:16px;font-size:12px;line-height:1.7;">{gap_html}</ul>
         </td>
