@@ -79,7 +79,7 @@ if __name__ == "__main__":
     sys.stdout.reconfigure(encoding="utf-8")
 
     date_arg = sys.argv[1] if len(sys.argv) > 1 else None
-    date_str = date_arg or (datetime.now() - timedelta(days=1)).strftime("%Y%m%d")
+    date_str = date_arg or datetime.now().strftime("%Y%m%d")
 
     days_back = 0
 
