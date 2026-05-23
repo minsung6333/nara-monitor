@@ -124,7 +124,8 @@ def _normalize_plan(item: dict, biz_type: str) -> dict:
     linked_bid_nos = [b.strip() for b in bid_list_raw.split(',') if b.strip()]
 
     order_no = item.get('orderPlanUntyNo', '')
-    detail_url = f'https://www.g2b.go.kr/link/PRPA015_01/single/?orderPlanUntyNo={order_no}' if order_no else ''
+    code = _PRCM_BSNE_SE_CD.get(biz_type, '03')
+    detail_url = f'https://www.g2b.go.kr/link/PRPA015_01/single/?oderPlanNo={order_no}&prcmBsneSeCd={code}' if order_no else ''
 
     return {
         'source': '발주계획',

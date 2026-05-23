@@ -150,12 +150,7 @@ def _high_card(r: dict) -> str:
     gap_html   = "".join(f'<li style="margin-bottom:5px;">{g}</li>' for g in gaps) \
                  if gaps else '<li style="color:#999;">-</li>'
 
-    if url and source != '발주계획':
-        detail_btn = f"""<a href="{url}" style="display:inline-block;padding:8px 20px;background:#c0392b;color:#fff;border-radius:6px;font-size:12px;text-decoration:none;font-weight:700;">공고 바로가기 →</a>"""
-    elif source == '발주계획':
-        detail_btn = """<span style="display:inline-block;padding:7px 14px;background:#f0f0f0;color:#666;border-radius:6px;font-size:11px;">🔍 나라장터 로그인 후 직접 검색</span>"""
-    else:
-        detail_btn = ""
+    detail_btn = f"""<a href="{url}" style="display:inline-block;padding:8px 20px;background:#c0392b;color:#fff;border-radius:6px;font-size:12px;text-decoration:none;font-weight:700;">공고 바로가기 →</a>""" if url else ""
 
     return f"""
     <div style="background:#fff;border:1.5px solid #f5c6c6;border-radius:10px;margin-bottom:20px;overflow:hidden;box-shadow:0 2px 8px rgba(192,57,43,0.08);">
@@ -278,12 +273,7 @@ def _card(r: dict, accent: str, bg: str) -> str:
         f'<li style="margin-bottom:4px;color:#2d3748;">{g}</li>' for g in gaps
     ) if gaps else '<li style="color:#888;">-</li>'
 
-    if url and source != '발주계획':
-        detail_btn = f"""<a href="{url}" style="display:inline-block;margin-top:12px;padding:7px 16px;background:{accent};color:#fff;border-radius:6px;font-size:12px;text-decoration:none;font-weight:600;">공고 바로가기 →</a>"""
-    elif source == '발주계획':
-        detail_btn = """<span style="display:inline-block;margin-top:10px;padding:6px 12px;background:#f0f0f0;color:#666;border-radius:6px;font-size:11px;">🔍 나라장터 로그인 후 직접 검색</span>"""
-    else:
-        detail_btn = ""
+    detail_btn = f"""<a href="{url}" style="display:inline-block;margin-top:12px;padding:7px 16px;background:{accent};color:#fff;border-radius:6px;font-size:12px;text-decoration:none;font-weight:600;">공고 바로가기 →</a>""" if url else ""
 
     return f"""
     <div style="background:{bg};border:1px solid #e2e8f0;border-left:4px solid {accent};border-radius:8px;padding:20px 22px;margin-bottom:16px;">
