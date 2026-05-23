@@ -94,6 +94,9 @@ def _normalize_bid(item: dict, biz_type: str) -> dict:
 
 def _normalize_spec(item: dict, biz_type: str) -> dict:
     """사전규격 항목을 공통 형식으로 변환"""
+    spec_no = item.get('bfSpecRgstNo', '')
+    detail_url = f'https://www.g2b.go.kr/link/PRVA004_02/single/?bfSpecRgstNo={spec_no}' if spec_no else ''
+
     return {
         'source': '사전규격',
         'type': biz_type,
@@ -105,8 +108,8 @@ def _normalize_spec(item: dict, biz_type: str) -> dict:
         'close_date': item.get('opninRgstClseDt', ''),
         'open_date': '',
         'contract_method': '',
-        'detail_url': '',
-        'notice_no': item.get('bfSpecRgstNo', ''),
+        'detail_url': detail_url,
+        'notice_no': spec_no,
         'files': _extract_files_spec(item),
     }
 
@@ -116,6 +119,9 @@ def _normalize_plan(item: dict, biz_type: str) -> dict:
     # 연결된 입찰공고번호 목록 파싱 (예: "R26BK01539068000,R26BK01539069000")
     bid_list_raw = item.get('bidNtceNoList', '') or ''
     linked_bid_nos = [b.strip() for b in bid_list_raw.split(',') if b.strip()]
+
+    order_no = item.get('orderPlanUntyNo', '')
+    detail_url = f'https://www.g2b.go.kr/link/PRPA015_01/single/?orderPlanUntyNo={order_no}' if order_no else ''
 
     return {
         'source': '발주계획',
@@ -128,10 +134,10 @@ def _normalize_plan(item: dict, biz_type: str) -> dict:
         'close_date': '',
         'open_date': '',
         'contract_method': item.get('cntrctMthdNm', ''),
-        'detail_url': '',
-        'notice_no': item.get('orderPlanUntyNo', ''),
-        'linked_bid_nos': linked_bid_nos,  # 연결된 입찰공고번호 (이미 공고된 경우)
-        'files': [],  # 발주계획 자체에는 파일 없음
+        'detail_url': detail_url,
+        'notice_no': order_no,
+        'linked_bid_nos': linked_bid_nos,
+        'files': [],
     }
 
 
