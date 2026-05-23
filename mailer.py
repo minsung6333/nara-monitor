@@ -150,9 +150,9 @@ def _high_card(r: dict) -> str:
     gap_html   = "".join(f'<li style="margin-bottom:5px;">{g}</li>' for g in gaps) \
                  if gaps else '<li style="color:#999;">-</li>'
 
-    if source == '입찰공고' and url:
+    if url and source != '발주계획':
         detail_btn = f"""<a href="{url}" style="display:inline-block;padding:8px 20px;background:#c0392b;color:#fff;border-radius:6px;font-size:12px;text-decoration:none;font-weight:700;">공고 바로가기 →</a>"""
-    elif source in ('사전규격', '발주계획'):
+    elif source == '발주계획':
         detail_btn = """<span style="display:inline-block;padding:7px 14px;background:#f0f0f0;color:#666;border-radius:6px;font-size:11px;">🔍 나라장터 로그인 후 직접 검색</span>"""
     else:
         detail_btn = ""
@@ -278,9 +278,9 @@ def _card(r: dict, accent: str, bg: str) -> str:
         f'<li style="margin-bottom:4px;color:#2d3748;">{g}</li>' for g in gaps
     ) if gaps else '<li style="color:#888;">-</li>'
 
-    if source == '입찰공고' and url:
+    if url and source != '발주계획':
         detail_btn = f"""<a href="{url}" style="display:inline-block;margin-top:12px;padding:7px 16px;background:{accent};color:#fff;border-radius:6px;font-size:12px;text-decoration:none;font-weight:600;">공고 바로가기 →</a>"""
-    elif source in ('사전규격', '발주계획'):
+    elif source == '발주계획':
         detail_btn = """<span style="display:inline-block;margin-top:10px;padding:6px 12px;background:#f0f0f0;color:#666;border-radius:6px;font-size:11px;">🔍 나라장터 로그인 후 직접 검색</span>"""
     else:
         detail_btn = ""

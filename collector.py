@@ -92,10 +92,13 @@ def _normalize_bid(item: dict, biz_type: str) -> dict:
     }
 
 
+_PRCM_BSNE_SE_CD = {'용역': '03', '물품': '01', '공사': '02'}
+
 def _normalize_spec(item: dict, biz_type: str) -> dict:
     """사전규격 항목을 공통 형식으로 변환"""
     spec_no = item.get('bfSpecRgstNo', '')
-    detail_url = f'https://www.g2b.go.kr/link/PRVA004_02/single/?bfSpecRgstNo={spec_no}' if spec_no else ''
+    code = _PRCM_BSNE_SE_CD.get(biz_type, '03')
+    detail_url = f'https://www.g2b.go.kr/link/PRVA004_02/single/?bfSpecRegNo={spec_no}&prcmBsneSeCd={code}' if spec_no else ''
 
     return {
         'source': '사전규격',
