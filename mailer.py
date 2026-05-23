@@ -145,6 +145,8 @@ def _high_card(r: dict) -> str:
 
     close_str = _fmt_date(close) if close else "마감일 미정"
 
+    content_summary = a.get("content_summary", "")
+
     match_html = "".join(f'<li style="margin-bottom:5px;">{m}</li>' for m in matches) \
                  if matches else '<li style="color:#999;">-</li>'
     gap_html   = "".join(f'<li style="margin-bottom:5px;">{g}</li>' for g in gaps) \
@@ -172,13 +174,13 @@ def _high_card(r: dict) -> str:
       <div style="padding:16px 20px 0;">
         <div style="font-size:16px;font-weight:700;color:#1a202c;line-height:1.5;margin-bottom:12px;">{title}</div>
 
-        <!-- 1줄: 기관 + 금액 (강조) -->
+        <!-- 기관 + 금액 -->
         <table width="100%" cellpadding="0" cellspacing="0" style="margin-bottom:8px;"><tr>
           <td style="font-size:15px;font-weight:700;color:#1a202c;">🏢 {agency}</td>
           <td style="font-size:16px;font-weight:800;color:#c0392b;text-align:right;white-space:nowrap;">💰 {amt_str}</td>
         </tr></table>
 
-        <!-- 2줄: 마감일 배지 -->
+        <!-- 마감일 배지 -->
         <div style="margin-bottom:12px;">
           <span style="display:inline-block;background:#c0392b;color:#fff;font-size:13px;font-weight:700;padding:5px 16px;border-radius:20px;">
             📅 마감 {close_str}
@@ -186,12 +188,20 @@ def _high_card(r: dict) -> str:
         </div>
       </div>
 
-      <!-- 구분선 -->
-      <div style="border-top:1px solid #fde8e8;margin:0 20px;"></div>
+      <!-- 공고 요약 -->
+      {"" if not content_summary else f'''
+      <div style="margin:0 20px 0;padding:12px 16px;background:#f8f9fa;border-left:3px solid #adb5bd;border-radius:0 6px 6px 0;">
+        <div style="font-size:11px;font-weight:700;color:#6c757d;margin-bottom:5px;">📋 공고 요약</div>
+        <div style="font-size:13px;color:#2d3748;line-height:1.7;">{content_summary}</div>
+      </div>'''}
 
-      <!-- 요약 -->
-      <div style="padding:12px 20px;font-size:13px;color:#2d3748;line-height:1.7;background:#fff9f9;">
-        {summary}
+      <!-- 구분선 -->
+      <div style="border-top:1px solid #fde8e8;margin:12px 20px 0;"></div>
+
+      <!-- 분석 결과 -->
+      <div style="padding:10px 20px 4px;">
+        <div style="font-size:11px;font-weight:700;color:#c0392b;margin-bottom:6px;">🔍 분석 결과</div>
+        <div style="font-size:13px;color:#2d3748;line-height:1.7;background:#fff9f9;padding:10px 14px;border-radius:6px;">{summary}</div>
       </div>
 
       <!-- 강점 / 리스크 -->
@@ -265,6 +275,8 @@ def _card(r: dict, accent: str, bg: str) -> str:
 
     close_str = _fmt_date(close) if close else "마감일 미정"
 
+    content_summary = a.get("content_summary", "")
+
     match_html = "".join(
         f'<li style="margin-bottom:4px;color:#2d3748;">{m}</li>' for m in matches
     ) if matches else '<li style="color:#888;">-</li>'
@@ -295,9 +307,19 @@ def _card(r: dict, accent: str, bg: str) -> str:
         🏢 {agency} &nbsp;|&nbsp; 💰 {amt_str} &nbsp;|&nbsp; 📅 마감 {close_str}
       </div>
 
-      <!-- 요약 -->
-      <div style="margin-top:12px;font-size:13px;color:#2d3748;line-height:1.7;padding:10px 14px;background:rgba(255,255,255,0.7);border-radius:6px;">
-        {summary}
+      <!-- 공고 요약 -->
+      {"" if not content_summary else f'''
+      <div style="margin-top:12px;padding:10px 14px;background:rgba(255,255,255,0.8);border-left:3px solid #adb5bd;border-radius:0 6px 6px 0;">
+        <div style="font-size:11px;font-weight:700;color:#6c757d;margin-bottom:4px;">📋 공고 요약</div>
+        <div style="font-size:13px;color:#2d3748;line-height:1.7;">{content_summary}</div>
+      </div>'''}
+
+      <!-- 분석 결과 -->
+      <div style="margin-top:10px;">
+        <div style="font-size:11px;font-weight:700;color:{accent};margin-bottom:4px;">🔍 분석 결과</div>
+        <div style="font-size:13px;color:#2d3748;line-height:1.7;padding:10px 14px;background:rgba(255,255,255,0.7);border-radius:6px;">
+          {summary}
+        </div>
       </div>
 
       <!-- 강점 / 리스크 -->
