@@ -5,7 +5,7 @@ customers/ 폴더의 모든 활성 고객을 순회하며 수집→분석→발�
 """
 import json
 import sys
-from datetime import datetime
+from datetime import datetime, timedelta
 from pathlib import Path
 
 from collector import collect
@@ -79,9 +79,9 @@ if __name__ == "__main__":
     sys.stdout.reconfigure(encoding="utf-8")
 
     date_arg = sys.argv[1] if len(sys.argv) > 1 else None
-    date_str = date_arg or datetime.now().strftime("%Y%m%d")
+    date_str = date_arg or (datetime.now() - timedelta(days=1)).strftime("%Y%m%d")
 
-    days_back = 1
+    days_back = 0
 
     customers = _load_customers()
     if not customers:
