@@ -2,7 +2,7 @@ name: 나라장터 Daily Monitor
 
 on:
   schedule:
-    - cron: '0 22 * * 0-4'  # UTC 일~목 22:00 (KST 월~금 07:00), 평일만
+    - cron: '50 21 * * 0-4'  # UTC 일~목 21:50 (KST 월~금 06:50), 평일만
   workflow_dispatch:         # 수동 실행 버튼
 
 jobs:
