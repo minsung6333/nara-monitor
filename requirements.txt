@@ -4,3 +4,4 @@ requests
 PyMuPDF
 pdfplumber
 openpyxl
+streamlit>=1.35.0

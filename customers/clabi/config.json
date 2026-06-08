@@ -1,5 +1,5 @@
 {
-  "company_name": "주식회사 클라비 (ClaBi Co., Ltd.)",
+  "company_name": "클라비_AX 사업실",
   "keywords": [
     "AI",
     "인공지능",
@@ -8,5 +8,15 @@
     "범정부"
   ],
   "mail_to": "dx@clabi.ai",
-  "active": true
+  "active": true,
+  "tracked_agencies": [
+    "한국과학기술기획평가원",
+    "전북특별자치도교육청",
+    "그랜드코리아레저(주)",
+    "한국교육과정평가원",
+    "소상공인시장진흥공단",
+    "금융감독원",
+    "한국마사회",
+    "국가데이터처"
+  ]
 }

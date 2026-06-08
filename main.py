@@ -44,15 +44,21 @@ def _run_customer(customer: dict, date_str: str, days_back: int) -> None:
     config  = customer["config"]
     profile = customer["profile"]
 
-    keywords    = config.get("keywords") or []
-    mail_to     = config.get("mail_to", "")
-    company     = config.get("company_name", cid)
+    keywords         = config.get("keywords") or []
+    tracked_agencies = config.get("tracked_agencies") or []
+    mail_to          = config.get("mail_to", "")
+    company          = config.get("company_name", cid)
 
     print(f"\n{'#'*60}")
     print(f"# 고객: {company}  [{cid}]")
     print(f"{'#'*60}")
 
-    notices = collect(date_str, days_back=days_back, keywords=keywords)
+    notices = collect(
+        date_str,
+        days_back=days_back,
+        keywords=keywords,
+        tracked_agencies=tracked_agencies,
+    )
     results, screened_all = run_pipeline(notices, profile, return_screened=True)
 
     is_monday = now.weekday() == 6  # UTC 일요일 = KST 월요일
@@ -67,6 +73,7 @@ def _run_customer(customer: dict, date_str: str, days_back: int) -> None:
         screened_all=screened_all,
         company_name=company,
         keywords=keywords,
+        tracked_agencies=tracked_agencies,
         save=True,
         mail=True,
         subject=subject,

@@ -242,18 +242,39 @@ def run_pipeline(
 
 # ── 유틸 ──────────────────────────────────────────────────────
 
+_PROFILE_SKIP = {"company_name", "description", "min_amount", "notes"}
+_PROFILE_LABELS = {
+    "business_areas":    "사업 영역",
+    "core_technologies": "핵심 기술",
+    "certifications":    "인증·파트너십",
+    "target_sectors":    "주요 고객 섹터",
+    "references":        "주요 레퍼런스",
+    "exclusions":        "제외 영역 (관심 없음)",
+    # 추가 필드는 key를 그대로 사용 (snake_case → 공백 치환)
+}
+
+
 def _format_profile(profile: dict) -> str:
+    """profile.json의 모든 리스트 필드를 동적으로 GPT 프롬프트에 포함."""
     lines = [f"회사명: {profile.get('company_name', '')}"]
     if d := profile.get("description"):
         lines.append(f"소개: {d}")
-    if areas := profile.get("business_areas"):
-        lines.append("사업 영역:\n" + "\n".join(f"  - {a}" for a in areas))
-    if tech := profile.get("core_technologies"):
-        lines.append("핵심 기술:\n" + "\n".join(f"  - {t}" for t in tech))
-    if sectors := profile.get("target_sectors"):
-        lines.append("주요 고객 섹터:\n" + "\n".join(f"  - {s}" for s in sectors))
-    if excl := profile.get("exclusions"):
-        lines.append("제외 영역 (관심 없음):\n" + "\n".join(f"  - {e}" for e in excl))
+
+    # 커스텀 필드의 한국어 레이블 매핑 (LLM이 생성)
+    custom_labels = profile.get("_labels") or {}
+
+    for key, value in profile.items():
+        if key in _PROFILE_SKIP or key.startswith("_"):
+            continue
+        if not isinstance(value, list) or not value:
+            continue
+        label = (
+            _PROFILE_LABELS.get(key)
+            or custom_labels.get(key)
+            or key.replace("_", " ")
+        )
+        lines.append(f"{label}:\n" + "\n".join(f"  - {v}" for v in value))
+
     if notes := profile.get("notes"):
         lines.append(f"특이사항: {notes}")
     return "\n".join(lines)

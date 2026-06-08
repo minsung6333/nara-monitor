@@ -17,9 +17,15 @@ load_dotenv()
 
 def build_html(results: list[dict], date_str: str, total_collected: int,
                screened_all: list[dict] = None,
-               company_name: str = "", keywords: list[str] = None) -> str:
+               company_name: str = "", keywords: list[str] = None,
+               tracked_agencies: list[str] = None) -> str:
     high = [r for r in results if r.get("analysis", {}).get("verdict") == "HIGH"]
     med  = [r for r in results if r.get("analysis", {}).get("verdict") == "MED"]
+
+    # 트래킹 기관 공고 (verdict와 무관하게 별도 섹션)
+    # screened_all에 모든 분석 결과가 있으므로 거기서 추출
+    source_list = screened_all if screened_all else results
+    tracked = [r for r in source_list if r.get("matched_agency")]
 
     date_label = f"{date_str[:4]}년 {date_str[4:6]}월 {date_str[6:]}일"
     kw_str = ", ".join(keywords) if keywords else ""
@@ -30,7 +36,10 @@ def build_html(results: list[dict], date_str: str, total_collected: int,
     high_cards = "".join(_high_card(r) for r in high)
     med_section = _section("🟡 검토 고려", "#d68910", "#fffbf0", med) if med else ""
 
-    if not high and not med:
+    # 트래킹 기관 섹션 — 트래킹 기관이 설정돼 있으면 결과 유무 무관 항상 표시
+    tracked_section = _tracked_section(tracked, tracked_agencies) if tracked_agencies else ""
+
+    if not high and not med and not tracked and not tracked_agencies:
         body = """<div style="text-align:center;padding:48px 0;color:#888;font-size:15px;">
           오늘은 해당하는 공고가 없습니다.</div>"""
     else:
@@ -40,7 +49,7 @@ def build_html(results: list[dict], date_str: str, total_collected: int,
                padding-bottom:8px;border-bottom:2px solid #c0392b;">🔴 즉시 검토</div>
           {high_cards}
         </div>""" if high else ""
-        body = high_section + med_section
+        body = tracked_section + high_section + med_section
 
     table_section = _all_table(screened_all) if screened_all else ""
 
@@ -240,6 +249,110 @@ def _badge(label: str, value: int, color: str, unit: str) -> str:
       <div style="color:{color};font-size:26px;font-weight:700;">{value}<span style="font-size:14px;margin-left:2px;">{unit}</span></div>
       <div style="color:#888;font-size:12px;margin-top:2px;">{label}</div>
     </td>"""
+
+
+def _tracked_section(items: list[dict], tracked_agencies: list[str] = None) -> str:
+    """트래킹 기관 공고 — 적합도 무관, 기관별 그룹화. 결과 없는 기관도 '공고 없음'으로 표시."""
+    if not tracked_agencies:
+        # 트래킹 기관이 설정 안 됐으면 섹션 자체 표시 안 함
+        if not items:
+            return ""
+        # 비상용: tracked_agencies 파라미터 없이 호출된 경우 items에서 추출
+        tracked_agencies = sorted({
+            r.get("matched_agency", "") for r in items if r.get("matched_agency")
+        })
+
+    # 기관별 그룹화
+    by_agency: dict[str, list[dict]] = {ag: [] for ag in tracked_agencies}
+    for r in items:
+        ag = r.get("matched_agency", "")
+        if ag in by_agency:
+            by_agency[ag].append(r)
+
+    accent = "#5b21b6"  # 보라색 — 키워드 결과와 시각적 구분
+
+    groups_html = ""
+    for agency in tracked_agencies:
+        notices = by_agency.get(agency, [])
+
+        count_text = f"({len(notices)}건)" if notices else "(0건)"
+        # 0건 기관은 색을 흐리게 — 시각적 구분
+        header_color = accent if notices else "#9ca3af"
+        header_bg    = "#f3f0ff" if notices else "#f5f5f7"
+        border_clr   = accent if notices else "#d1d5db"
+
+        summary_html = f"""
+          <summary style="cursor:pointer;font-size:14px;font-weight:700;color:{header_color};
+                          padding:8px 12px;background:{header_bg};border-radius:6px;
+                          border-left:3px solid {border_clr};
+                          list-style:none;user-select:none;outline:none;
+                          display:flex;align-items:center;">
+            <span style="display:inline-block;margin-right:6px;font-size:11px;color:{header_color};">▶</span>
+            🏢 {agency}
+            <span style="font-weight:400;color:#718096;font-size:12px;margin-left:8px;">{count_text}</span>
+          </summary>"""
+
+        if not notices:
+            content_html = """
+            <div style="padding:10px 12px;font-size:12px;color:#a0aec0;font-style:italic;">
+              해당 기간 내 등록된 공고가 없습니다.
+            </div>"""
+        else:
+            rows = ""
+            for n in notices:
+                title    = n.get("title", "")
+                source   = n.get("source", "")
+                biz_type = n.get("type", "")
+                url      = n.get("detail_url", "")
+                verdict  = n.get("analysis", {}).get("verdict") or n.get("relevance", "")
+                close    = _fmt_date(n.get("close_date", "")) if n.get("close_date") else ""
+
+                verdict_badge = ""
+                if verdict:
+                    v_color = {"HIGH": "#c0392b", "MED": "#d68910", "LOW": "#718096"}.get(verdict, "#718096")
+                    verdict_badge = (
+                        f'<span style="background:{v_color};color:#fff;font-size:10px;'
+                        f'padding:2px 6px;border-radius:3px;margin-right:6px;">{verdict}</span>'
+                    )
+
+                title_cell = (
+                    f'<a href="{url}" style="color:#2b6cb0;text-decoration:none;">{title}</a>'
+                    if url else title
+                )
+                meta = f"{source} · {biz_type}"
+                if close:
+                    meta += f" · 마감 {close}"
+
+                rows += f"""
+                <tr><td style="padding:8px 0;border-bottom:1px solid #ede9fe;">
+                  <div style="font-size:13px;line-height:1.5;color:#1a202c;">
+                    {verdict_badge}{title_cell}
+                  </div>
+                  <div style="font-size:11px;color:#718096;margin-top:3px;">{meta}</div>
+                </td></tr>"""
+
+            content_html = f"""
+            <div style="padding:8px 14px 4px;">
+              <table width="100%" cellpadding="0" cellspacing="0">{rows}</table>
+            </div>"""
+
+        groups_html += f"""
+        <details style="margin-bottom:10px;">
+          {summary_html}
+          {content_html}
+        </details>"""
+
+    return f"""
+    <div style="margin-top:28px;">
+      <div style="font-size:16px;font-weight:700;color:{accent};margin-bottom:14px;
+                  padding-bottom:8px;border-bottom:2px solid {accent};">
+        🏢 트래킹 기관 신규 공고
+        <span style="font-size:12px;font-weight:400;color:#718096;margin-left:8px;">
+          — 키워드 무관, 트래킹 기관이 등록한 모든 공고
+        </span>
+      </div>
+      {groups_html}
+    </div>"""
 
 
 def _section(title: str, accent: str, bg: str, items: list[dict]) -> str:
@@ -627,11 +740,13 @@ def _style_sheet(ws, col_widths: list):
 def send_report(results: list[dict], date_str: str, total_collected: int,
                 screened_all: list[dict] = None,
                 company_name: str = "", keywords: list[str] = None,
+                tracked_agencies: list[str] = None,
                 save: bool = True, mail: bool = True,
                 subject: str = None, mail_to: str = None,
                 report_prefix: str = "") -> None:
     html = build_html(results, date_str, total_collected, screened_all,
-                      company_name=company_name, keywords=keywords)
+                      company_name=company_name, keywords=keywords,
+                      tracked_agencies=tracked_agencies)
     excel_path = ""
     if save:
         prefix = f"{report_prefix}_" if report_prefix else ""

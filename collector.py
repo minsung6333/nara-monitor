@@ -278,15 +278,103 @@ def collect_order_plans(date_str: str, days_back: int = 1, keywords: list = None
 
 
 # ─────────────────────────────────────────────────────────────
+# 기관 트래킹 수집 (서버 필터 사용, 키워드 무관)
+# ─────────────────────────────────────────────────────────────
+
+# 검증된 서버 필터 파라미터 매핑
+_AGENCY_FILTER_PARAM = {
+    'bid_servc':  'ntceInsttNm',   # 입찰공고: 공고기관명
+    'bid_thng':   'ntceInsttNm',
+    'bid_cnstwk': 'ntceInsttNm',
+    'spec_servc': 'dminsttNm',     # 사전규격: 수요기관명
+    'spec_thng':  'dminsttNm',
+    'spec_cnstwk':'dminsttNm',
+    'plan_servc': 'orderInsttNm',  # 발주계획: 발주기관명
+    'plan_thng':  'orderInsttNm',
+    'plan_cnstwk':'orderInsttNm',
+}
+
+
+def collect_by_agencies(date_str: str, days_back: int = 1, agencies: list = None) -> list:
+    """
+    트래킹 기관별 수집. 키워드와 무관하게 해당 기관의 모든 공고를 수집.
+    같은 기준일자 범위 적용.
+    """
+    if not agencies:
+        return []
+
+    results = []
+    seen = set()  # uid 중복 제거
+
+    prev_day = (datetime.strptime(date_str, '%Y%m%d') - timedelta(days=days_back)).strftime('%Y%m%d')
+    date_start = prev_day + '0000'
+    date_end   = date_str + '2359'
+
+    # 수집 대상 엔드포인트 (config.py의 COLLECT_* 플래그 적용)
+    targets = []
+    if COLLECT_SERVC:
+        targets.extend([
+            ('bid_servc',  '입찰공고', '용역', _normalize_bid),
+            ('spec_servc', '사전규격', '용역', _normalize_spec),
+            ('plan_servc', '발주계획', '용역', _normalize_plan),
+        ])
+    if COLLECT_THNG:
+        targets.extend([
+            ('bid_thng',  '입찰공고', '물품', _normalize_bid),
+            ('spec_thng', '사전규격', '물품', _normalize_spec),
+            ('plan_thng', '발주계획', '물품', _normalize_plan),
+        ])
+    if COLLECT_CNSTWK:
+        targets.extend([
+            ('bid_cnstwk',  '입찰공고', '공사', _normalize_bid),
+            ('spec_cnstwk', '사전규격', '공사', _normalize_spec),
+            ('plan_cnstwk', '발주계획', '공사', _normalize_plan),
+        ])
+
+    for agency in agencies:
+        print(f"  [트래킹] '{agency}' 수집 중...")
+        for endpoint_key, source, biz_type, normalizer in targets:
+            param_name = _AGENCY_FILTER_PARAM[endpoint_key]
+            params = {
+                'ServiceKey': SERVICE_KEY,
+                'type': 'json',
+                'inqryDiv': '1',
+                'inqryBgnDt': date_start,
+                'inqryEndDt': date_end,
+                param_name: agency,
+            }
+            items = _fetch_all_pages(ENDPOINTS[endpoint_key], params)
+            for item in items:
+                # uid 추출 (각 정규화 함수가 사용하는 필드 사용)
+                uid = (item.get('bidNtceNo', '') + item.get('bidNtceOrd', '')
+                       or item.get('bfSpecRgstNo', '')
+                       or item.get('orderPlanUntyNo', ''))
+                if not uid or uid in seen:
+                    continue
+                seen.add(uid)
+                notice = normalizer(item, biz_type)
+                notice['matched_agency'] = agency  # 트래킹 결과 표시용
+                results.append(notice)
+
+    return results
+
+
+# ─────────────────────────────────────────────────────────────
 # 메인 수집 함수
 # ─────────────────────────────────────────────────────────────
 
-def collect(date_str: str = None, days_back: int = 1, keywords: list = None) -> list:
+def collect(
+    date_str: str = None,
+    days_back: int = 1,
+    keywords: list = None,
+    tracked_agencies: list = None,
+) -> list:
     """
     date_str: 'YYYYMMDD' (기본값: 오늘)
     days_back: 수집 시작일 (기본 1일 전, 월요일이면 3 권장)
     keywords: 고객별 키워드 (None이면 config.py KEYWORDS 사용)
-    세 API 모두 수집 후 통합 반환
+    tracked_agencies: 트래킹 기관 목록 — 키워드와 무관하게 추가 수집
+    세 API 모두 수집 후 통합 반환 (키워드 + 기관 트래킹 중복 제거)
     """
     if date_str is None:
         date_str = datetime.now().strftime('%Y%m%d')
@@ -297,6 +385,8 @@ def collect(date_str: str = None, days_back: int = 1, keywords: list = None) -> 
     print(f"\n{'='*50}")
     print(f"수집 날짜: {date_str} (기간: {start_day} ~ {date_str})")
     print(f"키워드: {kws}")
+    if tracked_agencies:
+        print(f"트래킹 기관: {tracked_agencies}")
     print('='*50)
 
     all_results = []
@@ -315,6 +405,32 @@ def collect(date_str: str = None, days_back: int = 1, keywords: list = None) -> 
     plan = collect_order_plans(date_str, days_back, kws)
     print(f"  → 키워드 매칭 {len(plan)}건")
     all_results.extend(plan)
+
+    # 키워드 결과 인덱스 (uid → notice) 미리 구축
+    keyword_index = {}
+    for n in all_results:
+        uid = n.get('notice_no', '')
+        if uid:
+            keyword_index[uid] = n
+
+    # 기관 트래킹 수집 (있는 경우)
+    if tracked_agencies:
+        print(f"\n[4/4] 기관 트래킹 수집 — {len(tracked_agencies)}개 기관")
+        agency_results = collect_by_agencies(date_str, days_back, tracked_agencies)
+
+        new_count = merged_count = 0
+        for n in agency_results:
+            uid = n.get('notice_no', '')
+            if uid and uid in keyword_index:
+                # 키워드 매칭과 중복 — matched_agency 정보를 키워드 결과에 병합
+                keyword_index[uid]['matched_agency'] = n.get('matched_agency', '')
+                merged_count += 1
+            else:
+                # 신규 — 그대로 추가
+                all_results.append(n)
+                new_count += 1
+
+        print(f"  → 기관 트래킹 {len(agency_results)}건 (신규 {new_count}건 추가, 키워드와 중복 {merged_count}건은 트래킹 정보 병합)")
 
     print(f"\n{'='*50}")
     print(f"총 수집: {len(all_results)}건")
