@@ -1,5 +1,5 @@
 {
-  "company_name": "클라비_전략사업실",
+  "company_name": "클라비_전략사업실_Sample",
   "keywords": [
     "ISP",
     "ISMP",
@@ -7,6 +7,6 @@
     "AI"
   ],
   "mail_to": "msseo@clabi.ai",
-  "active": true,
+  "active": false,
   "tracked_agencies": []
 }
