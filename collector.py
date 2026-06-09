@@ -295,10 +295,15 @@ _AGENCY_FILTER_PARAM = {
 }
 
 
-def collect_by_agencies(date_str: str, days_back: int = 1, agencies: list = None) -> list:
+def collect_by_agencies(
+    date_str: str,
+    days_back: int = 1,
+    agencies: list = None,
+    keywords: list = None,
+) -> list:
     """
-    트래킹 기관별 수집. 키워드와 무관하게 해당 기관의 모든 공고를 수집.
-    같은 기준일자 범위 적용.
+    트래킹 기관별 수집. 동일 기준일자 범위 적용.
+    keywords가 주어지면 공고 제목/품명에 키워드 포함된 것만 반환 (2차 필터).
     """
     if not agencies:
         return []
@@ -311,29 +316,30 @@ def collect_by_agencies(date_str: str, days_back: int = 1, agencies: list = None
     date_end   = date_str + '2359'
 
     # 수집 대상 엔드포인트 (config.py의 COLLECT_* 플래그 적용)
+    # (endpoint_key, source, biz_type, normalizer, title_field)
     targets = []
     if COLLECT_SERVC:
         targets.extend([
-            ('bid_servc',  '입찰공고', '용역', _normalize_bid),
-            ('spec_servc', '사전규격', '용역', _normalize_spec),
-            ('plan_servc', '발주계획', '용역', _normalize_plan),
+            ('bid_servc',  '입찰공고', '용역', _normalize_bid,  'bidNtceNm'),
+            ('spec_servc', '사전규격', '용역', _normalize_spec, 'prdctClsfcNoNm'),
+            ('plan_servc', '발주계획', '용역', _normalize_plan, 'bizNm'),
         ])
     if COLLECT_THNG:
         targets.extend([
-            ('bid_thng',  '입찰공고', '물품', _normalize_bid),
-            ('spec_thng', '사전규격', '물품', _normalize_spec),
-            ('plan_thng', '발주계획', '물품', _normalize_plan),
+            ('bid_thng',  '입찰공고', '물품', _normalize_bid,  'bidNtceNm'),
+            ('spec_thng', '사전규격', '물품', _normalize_spec, 'prdctClsfcNoNm'),
+            ('plan_thng', '발주계획', '물품', _normalize_plan, 'bizNm'),
         ])
     if COLLECT_CNSTWK:
         targets.extend([
-            ('bid_cnstwk',  '입찰공고', '공사', _normalize_bid),
-            ('spec_cnstwk', '사전규격', '공사', _normalize_spec),
-            ('plan_cnstwk', '발주계획', '공사', _normalize_plan),
+            ('bid_cnstwk',  '입찰공고', '공사', _normalize_bid,  'bidNtceNm'),
+            ('spec_cnstwk', '사전규격', '공사', _normalize_spec, 'prdctClsfcNoNm'),
+            ('plan_cnstwk', '발주계획', '공사', _normalize_plan, 'bizNm'),
         ])
 
     for agency in agencies:
         print(f"  [트래킹] '{agency}' 수집 중...")
-        for endpoint_key, source, biz_type, normalizer in targets:
+        for endpoint_key, source, biz_type, normalizer, title_field in targets:
             param_name = _AGENCY_FILTER_PARAM[endpoint_key]
             params = {
                 'ServiceKey': SERVICE_KEY,
@@ -345,7 +351,13 @@ def collect_by_agencies(date_str: str, days_back: int = 1, agencies: list = None
             }
             items = _fetch_all_pages(ENDPOINTS[endpoint_key], params)
             for item in items:
-                # uid 추출 (각 정규화 함수가 사용하는 필드 사용)
+                # 키워드 2차 필터 (있는 경우)
+                if keywords:
+                    title = item.get(title_field, '') or ''
+                    if not _keyword_match(title, keywords):
+                        continue
+
+                # uid 추출
                 uid = (item.get('bidNtceNo', '') + item.get('bidNtceOrd', '')
                        or item.get('bfSpecRgstNo', '')
                        or item.get('orderPlanUntyNo', ''))
@@ -353,7 +365,7 @@ def collect_by_agencies(date_str: str, days_back: int = 1, agencies: list = None
                     continue
                 seen.add(uid)
                 notice = normalizer(item, biz_type)
-                notice['matched_agency'] = agency  # 트래킹 결과 표시용
+                notice['matched_agency'] = agency
                 results.append(notice)
 
     return results
@@ -413,10 +425,12 @@ def collect(
         if uid:
             keyword_index[uid] = n
 
-    # 기관 트래킹 수집 (있는 경우)
+    # 기관 트래킹 수집 (있는 경우) — 키워드 매칭된 공고만
     if tracked_agencies:
-        print(f"\n[4/4] 기관 트래킹 수집 — {len(tracked_agencies)}개 기관")
-        agency_results = collect_by_agencies(date_str, days_back, tracked_agencies)
+        print(f"\n[4/4] 기관 트래킹 수집 — {len(tracked_agencies)}개 기관 (키워드 매칭 적용)")
+        agency_results = collect_by_agencies(
+            date_str, days_back, tracked_agencies, keywords=kws,
+        )
 
         new_count = merged_count = 0
         for n in agency_results:
@@ -426,11 +440,11 @@ def collect(
                 keyword_index[uid]['matched_agency'] = n.get('matched_agency', '')
                 merged_count += 1
             else:
-                # 신규 — 그대로 추가
+                # 신규 (이론상 키워드 필터를 통과했으므로 키워드 결과에도 있을 가능성 큼)
                 all_results.append(n)
                 new_count += 1
 
-        print(f"  → 기관 트래킹 {len(agency_results)}건 (신규 {new_count}건 추가, 키워드와 중복 {merged_count}건은 트래킹 정보 병합)")
+        print(f"  → 기관 트래킹 키워드 매칭 {len(agency_results)}건 (신규 {new_count}건, 머지 {merged_count}건)")
 
     print(f"\n{'='*50}")
     print(f"총 수집: {len(all_results)}건")

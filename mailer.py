@@ -22,10 +22,13 @@ def build_html(results: list[dict], date_str: str, total_collected: int,
     high = [r for r in results if r.get("analysis", {}).get("verdict") == "HIGH"]
     med  = [r for r in results if r.get("analysis", {}).get("verdict") == "MED"]
 
-    # 트래킹 기관 공고 (verdict와 무관하게 별도 섹션)
-    # screened_all에 모든 분석 결과가 있으므로 거기서 추출
-    source_list = screened_all if screened_all else results
-    tracked = [r for r in source_list if r.get("matched_agency")]
+    # 트래킹 기관 공고 — HIGH/MED 분석 통과 + 키워드 매칭된 것만
+    # (collector에서 이미 키워드 필터링됨, 여기서는 AI 적합도 HIGH/MED만 필터)
+    tracked = [
+        r for r in results
+        if r.get("matched_agency")
+        and r.get("analysis", {}).get("verdict") in ("HIGH", "MED")
+    ]
 
     date_label = f"{date_str[:4]}년 {date_str[4:6]}월 {date_str[6:]}일"
     kw_str = ", ".join(keywords) if keywords else ""
@@ -295,7 +298,7 @@ def _tracked_section(items: list[dict], tracked_agencies: list[str] = None) -> s
         if not notices:
             content_html = """
             <div style="padding:10px 12px;font-size:12px;color:#a0aec0;font-style:italic;">
-              해당 기간 내 등록된 공고가 없습니다.
+              키워드 매칭 + AI 적합도 통과 공고 없음
             </div>"""
         else:
             rows = ""
@@ -348,7 +351,7 @@ def _tracked_section(items: list[dict], tracked_agencies: list[str] = None) -> s
                   padding-bottom:8px;border-bottom:2px solid {accent};">
         🏢 트래킹 기관 신규 공고
         <span style="font-size:12px;font-weight:400;color:#718096;margin-left:8px;">
-          — 키워드 무관, 트래킹 기관이 등록한 모든 공고
+          — 트래킹 기관 + 키워드 매칭 + AI 적합도(HIGH/MED) 통과
         </span>
       </div>
       {groups_html}
