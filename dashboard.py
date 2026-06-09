@@ -951,6 +951,61 @@ def show_edit(cid: str):
                 st.session_state.pop(k, None)
             st.rerun()
 
+    # ── 위험 영역 (고객사 삭제) ──
+    st.write("")
+    st.write("")
+    with st.expander("⚠️ 위험 영역 — 고객사 삭제", expanded=False):
+        company_name = cfg.get("company_name", cid)
+        st.markdown(
+            f"""
+            <div style="padding:12px;background:#fef2f2;border-left:4px solid #dc2626;
+                        border-radius:4px;margin-bottom:12px;">
+              <div style="font-weight:700;color:#dc2626;margin-bottom:6px;">⚠️ 되돌릴 수 없는 작업입니다</div>
+              <div style="font-size:13px;color:#4b5563;line-height:1.6;">
+                이 고객사의 <b>config.json + profile.json</b>이 영구 삭제되고 GitHub에서도 제거됩니다.<br>
+                삭제 후에는 매일 자동 메일 발송에서 제외되며, 복구는 git 이력에서 수동 복원해야 합니다.
+              </div>
+            </div>
+            """,
+            unsafe_allow_html=True,
+        )
+
+        confirm_input = st.text_input(
+            f"확인을 위해 회사명을 정확히 입력하세요: **{company_name}**",
+            placeholder=company_name,
+            key=f"delete_confirm_{cid}",
+        )
+        can_delete = confirm_input.strip() == company_name.strip()
+
+        if st.button(
+            "🗑 고객사 영구 삭제",
+            type="primary" if can_delete else "secondary",
+            disabled=not can_delete,
+            key=f"delete_btn_{cid}",
+            help="회사명을 정확히 입력하면 활성화됩니다.",
+        ):
+            import shutil
+            target = CUSTOMERS_DIR / cid
+            try:
+                shutil.rmtree(target)
+                st.success(f"✅ '{company_name}' 로컬 폴더 삭제 완료")
+
+                with st.spinner("GitHub에서도 제거 중..."):
+                    ok, msg = git_commit_and_push(f"dashboard: delete customer {cid}")
+                if ok:
+                    st.success(f"☁️ {msg}")
+                else:
+                    st.warning(f"⚠️ {msg}")
+
+                # 편집 페이지에서 빠져나가기
+                for k in [kw_key, ag_key, prof_key, f"delete_confirm_{cid}"]:
+                    st.session_state.pop(k, None)
+                st.session_state["view"]    = "home"
+                st.session_state["editing"] = None
+                st.rerun()
+            except Exception as e:
+                st.error(f"삭제 실패: {e}")
+
 
 # ─── 라우팅 ───────────────────────────────────────────────────
 
