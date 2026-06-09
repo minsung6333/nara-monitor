@@ -537,6 +537,12 @@ with st.sidebar:
 def show_home():
     st.header("고객사 관리")
     st.caption(f"총 {len(customers)}개 고객사")
+
+    # flash 메시지 (삭제 등 직전 작업 결과 1회 표시)
+    flash = st.session_state.pop("_flash", None)
+    if flash:
+        st.success(flash)
+
     st.divider()
 
     cols = st.columns(3)
@@ -988,20 +994,24 @@ def show_edit(cid: str):
             target = CUSTOMERS_DIR / cid
             try:
                 shutil.rmtree(target)
-                st.success(f"✅ '{company_name}' 로컬 폴더 삭제 완료")
 
-                with st.spinner("GitHub에서도 제거 중..."):
-                    ok, msg = git_commit_and_push(f"dashboard: delete customer {cid}")
-                if ok:
-                    st.success(f"☁️ {msg}")
-                else:
-                    st.warning(f"⚠️ {msg}")
-
-                # 편집 페이지에서 빠져나가기
-                for k in [kw_key, ag_key, prof_key, f"delete_confirm_{cid}"]:
-                    st.session_state.pop(k, None)
+                # 편집 페이지 관련 session_state 즉시 정리 (rerun 후 안전)
+                for k in list(st.session_state.keys()):
+                    if k.endswith(f"_{cid}") or k == "editing":
+                        st.session_state.pop(k, None)
                 st.session_state["view"]    = "home"
                 st.session_state["editing"] = None
+
+                # 결과 메시지를 home에서 한 번만 표시하도록 flash 저장
+                st.session_state["_flash"] = f"✅ '{company_name}' 삭제 완료"
+
+                # GitHub push는 별도로 시도 (실패해도 UI는 home으로 복귀)
+                try:
+                    ok, msg = git_commit_and_push(f"dashboard: delete customer {cid}")
+                    st.session_state["_flash"] += f"  ·  ☁️ {msg}" if ok else f"  ·  ⚠️ {msg}"
+                except Exception as e:
+                    st.session_state["_flash"] += f"  ·  ⚠️ push 실패: {e}"
+
                 st.rerun()
             except Exception as e:
                 st.error(f"삭제 실패: {e}")
@@ -1012,7 +1022,14 @@ def show_edit(cid: str):
 if st.session_state["view"] == "home":
     show_home()
 elif st.session_state["view"] == "edit" and st.session_state["editing"]:
-    show_edit(st.session_state["editing"])
+    edit_cid = st.session_state["editing"]
+    if edit_cid in customers:
+        show_edit(edit_cid)
+    else:
+        # 삭제됐거나 존재하지 않는 고객사 — home으로 안전 복귀
+        st.session_state["view"]    = "home"
+        st.session_state["editing"] = None
+        st.rerun()
 else:
     st.session_state["view"] = "home"
     st.rerun()
