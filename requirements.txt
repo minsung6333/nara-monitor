@@ -4,4 +4,5 @@ requests
 PyMuPDF
 pdfplumber
 openpyxl
+olefile
 streamlit>=1.35.0

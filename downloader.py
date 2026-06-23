@@ -5,13 +5,19 @@ import requests
 from urllib.parse import unquote
 from pathlib import Path
 
-# HWP 계열보다 PDF를 우선시하는 확장자 우선순위 (낮을수록 우선)
+# 같은 사업의 문서가 여러 포맷으로 올라온 경우 우선순위 (낮을수록 우선)
+# PDF가 가장 깔끔하지만, HWP/HWPX도 직접 파싱(extractor)으로 추출 가능
 _EXT_PRIORITY = {
     '.pdf': 0,
     '.hwpx': 1,
     '.hwp': 2,
 }
-_SKIP_EXTS = {'.hwp', '.hwpx'}
+
+# RFP 문서로 인식할 파일명 키워드 (이 중 하나라도 포함되어야 검토 대상)
+RFP_FILENAME_KEYWORDS = ('제안요청서', '과업지시서', '과업내용서')
+
+# 텍스트 추출 가능한 확장자 (analyzer가 이 확장자만 분석 대상으로 사용)
+EXTRACTABLE_EXTS = {'.pdf', '.hwp', '.hwpx'}
 
 
 def _get_filename_from_response(resp: requests.Response, url: str) -> str:
@@ -35,17 +41,39 @@ def _base_name(filename: str) -> str:
     return Path(filename).stem.lower()
 
 
+def _is_rfp_file(name: str) -> bool:
+    """파일명에 RFP 키워드(제안요청서/과업지시서)가 포함되는지"""
+    return any(kw in name for kw in RFP_FILENAME_KEYWORDS)
+
+
+# 파일명을 알 수 없어 collector가 임시로 붙인 placeholder 패턴
+# (사전규격 API는 파일명을 안 주므로 '규격문서N'으로 표기됨)
+_PLACEHOLDER_PAT = re.compile(r'^(규격문서|첨부파일)\d+$')
+
+
+def _is_placeholder_name(name: str) -> bool:
+    return bool(_PLACEHOLDER_PAT.match(name.strip()))
+
+
 def select_files(files: list[dict]) -> list[dict]:
     """
     files: [{'name': str, 'url': str}, ...]
-    같은 base name이면 PDF를 우선 선택, HWP/HWPX만 있으면 그대로 사용.
-    반환: 다운로드할 파일 목록 (중복 제거 후)
+    1차 필터: 파일명에 RFP 키워드(제안요청서/과업지시서)가 있거나,
+              파일명을 모르는 placeholder(사전규격 '규격문서N')는 일단 통과
+              → 실제 RFP 여부는 다운로드 후 Content-Disposition 파일명으로 재판별
+    2차: 같은 base name이면 PDF 우선 선택
+    반환: 다운로드 후보 목록 (없으면 빈 리스트 → PDF 검토 스킵)
     """
-    # base name → 최우선 파일 dict 매핑
+    candidates = [
+        f for f in files
+        if f.get('url') and (_is_rfp_file(f.get('name', '')) or _is_placeholder_name(f.get('name', '')))
+    ]
+    if not candidates:
+        return []
+
+    # base name → 최우선 파일 dict 매핑 (PDF 우선)
     best: dict[str, dict] = {}
-    for f in files:
-        if not f.get('url'):
-            continue
+    for f in candidates:
         name = f.get('name', '') or Path(f['url'].split('?')[0]).name
         ext = Path(name).suffix.lower()
         base = _base_name(name)
@@ -95,13 +123,21 @@ def download_files(files: list[dict], dest_dir: str = None) -> list[dict]:
             fp.write(resp.content)
 
         ext = Path(filename).suffix.lower()
+        print(f"  [다운로드] {filename} ({len(resp.content):,} bytes)")
+
+        # placeholder(사전규격 '규격문서N')로 통과한 파일은
+        # 실제 파일명(Content-Disposition)으로 RFP 키워드 재판별
+        orig_name = f.get('name', '')
+        if _is_placeholder_name(orig_name) and not _is_rfp_file(filename):
+            print(f"    → RFP 아님(제외): {filename}")
+            continue
+
         results.append({
             'name': filename,
             'url': url,
             'local_path': local_path,
             'ext': ext,
         })
-        print(f"  [다운로드] {filename} ({len(resp.content):,} bytes)")
 
     return results
 

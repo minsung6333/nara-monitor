@@ -23,7 +23,6 @@ def build_html(results: list[dict], date_str: str, total_collected: int,
     med  = [r for r in results if r.get("analysis", {}).get("verdict") == "MED"]
 
     # 트래킹 기관 공고 — HIGH/MED 분석 통과 + 키워드 매칭된 것만
-    # (collector에서 이미 키워드 필터링됨, 여기서는 AI 적합도 HIGH/MED만 필터)
     tracked = [
         r for r in results
         if r.get("matched_agency")
@@ -35,24 +34,28 @@ def build_html(results: list[dict], date_str: str, total_collected: int,
 
     greeting = _greeting(company_name, date_label, kw_str, total_collected)
 
-    # HIGH는 강조 카드, MED는 일반 카드
-    high_cards = "".join(_high_card(r) for r in high)
-    med_section = _section("🟡 검토 고려", "#d68910", "#fffbf0", med) if med else ""
-
-    # 트래킹 기관 섹션 — 트래킹 기관이 설정돼 있으면 결과 유무 무관 항상 표시
+    # 트래킹 기관 섹션 — 최상단
     tracked_section = _tracked_section(tracked, tracked_agencies) if tracked_agencies else ""
+
+    # 카테고리별 박스 (입찰공고 / 사전규격 / 발주계획) — 각 박스는 토글
+    SOURCES_ORDER = [
+        ("입찰공고", "#dc2626"),   # 빨강 — 실제 입찰
+        ("사전규격", "#7c3aed"),   # 보라 — 사전 규격 공개
+        ("발주계획", "#0891b2"),   # 청록 — 발주 계획
+    ]
+    category_sections = ""
+    for src_label, src_color in SOURCES_ORDER:
+        src_high = [r for r in high if r.get("source") == src_label]
+        src_med  = [r for r in med  if r.get("source") == src_label]
+        if not src_high and not src_med:
+            continue
+        category_sections += _category_box(src_label, src_color, src_high, src_med)
 
     if not high and not med and not tracked and not tracked_agencies:
         body = """<div style="text-align:center;padding:48px 0;color:#888;font-size:15px;">
           오늘은 해당하는 공고가 없습니다.</div>"""
     else:
-        high_section = f"""
-        <div style="margin-top:8px;">
-          <div style="font-size:16px;font-weight:700;color:#c0392b;margin-bottom:16px;
-               padding-bottom:8px;border-bottom:2px solid #c0392b;">🔴 즉시 검토</div>
-          {high_cards}
-        </div>""" if high else ""
-        body = tracked_section + high_section + med_section
+        body = tracked_section + category_sections
 
     table_section = _all_table(screened_all) if screened_all else ""
 
@@ -158,6 +161,7 @@ def _high_card(r: dict) -> str:
     close_str = _fmt_date(close) if close else "마감일 미정"
 
     content_summary = a.get("content_summary", "")
+    no_rfp_badge = _no_rfp_badge(a)
 
     match_html = "".join(f'<li style="margin-bottom:5px;">{m}</li>' for m in matches) \
                  if matches else '<li style="color:#999;">-</li>'
@@ -173,7 +177,7 @@ def _high_card(r: dict) -> str:
       <table width="100%" cellpadding="0" cellspacing="0">
       <tr>
         <td style="background:linear-gradient(90deg,#c0392b 0%,#e74c3c 100%);padding:14px 20px;vertical-align:middle;">
-          <span style="background:rgba(255,255,255,0.2);color:#fff;font-size:11px;font-weight:700;padding:3px 10px;border-radius:4px;">{source} · {biz_type}</span>
+          <span style="background:rgba(255,255,255,0.2);color:#fff;font-size:11px;font-weight:700;padding:3px 10px;border-radius:4px;">{source} · {biz_type}</span>{no_rfp_badge}
         </td>
         <td style="background:linear-gradient(90deg,#c0392b 0%,#e74c3c 100%);padding:14px 20px;text-align:right;vertical-align:middle;white-space:nowrap;width:90px;">
           <span style="color:#fff;font-size:32px;font-weight:800;line-height:1;">{score}</span>
@@ -358,6 +362,58 @@ def _tracked_section(items: list[dict], tracked_agencies: list[str] = None) -> s
     </div>"""
 
 
+def _category_box(label: str, color: str, high: list[dict], med: list[dict]) -> str:
+    """카테고리(사전규격/입찰공고/발주계획) 박스. HIGH는 펴진 채, MED는 접힌 채."""
+    if not high and not med:
+        return ""
+
+    high_cards = "".join(_high_card(r) for r in high)
+    med_cards  = "".join(_card(r, "#d68910", "#fffbf0") for r in med)
+
+    high_block = ""
+    if high:
+        high_block = f"""
+        <div style="margin-top:4px;">
+          <div style="font-size:13px;font-weight:700;color:#c0392b;margin-bottom:10px;
+                      padding:4px 8px;background:#fef2f2;border-radius:4px;display:inline-block;">
+            🔴 즉시 검토 ({len(high)}건)
+          </div>
+          {high_cards}
+        </div>"""
+
+    med_block = ""
+    if med:
+        med_block = f"""
+        <details style="margin-top:14px;">
+          <summary style="cursor:pointer;font-size:13px;font-weight:700;color:#d68910;
+                          padding:6px 10px;background:#fffbf0;border-radius:4px;
+                          list-style:none;user-select:none;outline:none;display:inline-block;">
+            <span style="font-size:11px;margin-right:4px;">▶</span>
+            🟡 검토 고려 ({len(med)}건) — 클릭하여 펼치기
+          </summary>
+          <div style="margin-top:12px;">{med_cards}</div>
+        </details>"""
+
+    total_count = len(high) + len(med)
+    # 카테고리 박스 전체를 토글(details)로. 기본 닫힘 — 클릭하여 펼침.
+    return f"""
+    <details style="margin-top:20px;border:1px solid #e2e8f0;border-radius:10px;
+                background:#fff;overflow:hidden;">
+      <summary style="padding:14px 20px;background:{color};color:#fff;cursor:pointer;
+                      list-style:none;user-select:none;outline:none;
+                      font-size:16px;font-weight:700;">
+        <span style="font-size:12px;margin-right:6px;">▶</span>{label}
+        <span style="font-size:12px;font-weight:400;opacity:0.85;margin-left:8px;">
+          HIGH {len(high)}건 · MED {len(med)}건 · 총 {total_count}건
+        </span>
+      </summary>
+      <div style="padding:18px 20px;">
+        {high_block}
+        {med_block}
+      </div>
+    </details>"""
+
+
 def _section(title: str, accent: str, bg: str, items: list[dict]) -> str:
     cards = "".join(_card(r, accent, bg) for r in items)
     return f"""
@@ -392,6 +448,7 @@ def _card(r: dict, accent: str, bg: str) -> str:
     close_str = _fmt_date(close) if close else "마감일 미정"
 
     content_summary = a.get("content_summary", "")
+    no_rfp_badge = _no_rfp_badge(a)
 
     match_html = "".join(
         f'<li style="margin-bottom:4px;color:#2d3748;">{m}</li>' for m in matches
@@ -409,7 +466,7 @@ def _card(r: dict, accent: str, bg: str) -> str:
       <!-- 타이틀 행 -->
       <table width="100%" cellpadding="0" cellspacing="0"><tr>
         <td style="vertical-align:top;">
-          <span style="display:inline-block;background:{accent};color:#fff;font-size:11px;font-weight:700;padding:2px 8px;border-radius:4px;margin-bottom:8px;">{source} · {biz_type}</span>
+          <span style="display:inline-block;background:{accent};color:#fff;font-size:11px;font-weight:700;padding:2px 8px;border-radius:4px;margin-bottom:8px;">{source} · {biz_type}</span>{no_rfp_badge}
           <div style="font-size:15px;font-weight:700;color:#1a202c;line-height:1.5;">{title}</div>
         </td>
         <td style="vertical-align:top;text-align:right;white-space:nowrap;padding-left:12px;">
@@ -533,6 +590,17 @@ def _all_table(screened: list[dict]) -> str:
       </div>
     </details>
   </td></tr>"""
+
+
+def _no_rfp_badge(analysis: dict) -> str:
+    """RFP(제안요청서/과업지시서)를 확보 못 한 공고에 표시할 뱃지."""
+    if not analysis.get("_no_rfp"):
+        return ""
+    return (
+        '<span style="display:inline-block;background:#94a3b8;color:#fff;'
+        'font-size:10px;font-weight:700;padding:2px 7px;border-radius:4px;'
+        'margin-left:8px;vertical-align:middle;white-space:nowrap;">📄 제안요청서 확인 불가</span>'
+    )
 
 
 def _fmt_date(dt_str: str) -> str:

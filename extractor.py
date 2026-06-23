@@ -1,10 +1,15 @@
 # -*- coding: utf-8 -*-
 """
-PDF 텍스트 추출 + 제안요청서 앞부분 사업 개요 파싱
+문서 텍스트 추출 (PDF / HWP / HWPX) + 제안요청서 앞부분 사업 개요 파싱
 rfp-writer/dist/modules/parser.py 에서 필요한 부분만 발췌·개선
 """
 import json
 import re
+import struct
+import zipfile
+import zlib
+from pathlib import Path
+
 import fitz  # PyMuPDF
 import pdfplumber
 from openai import OpenAI
@@ -104,6 +109,158 @@ def extract_text_by_page(pdf_path: str) -> list[dict]:
         return fitz_pages
 
 
+# ── HWP / HWPX 텍스트 추출 ────────────────────────────────────
+
+# 한글 본문에 섞여 들어오는 인라인 컨트롤·바이너리 노이즈 제거
+_NOISE_PAT = re.compile(r'[\x00-\x08\x0b-\x1f\x7f-\x9f]')
+# CJK 호환·사용자영역 등 깨진 글리프(예: 捤獥汤捯) 제거용 — 한글/한자/영숫자/일반기호만 허용
+_KEEP_PAT = re.compile(
+    r'[가-힣ㄱ-ㅎㅏ-ㅣ'           # 한글
+    r'a-zA-Z0-9'                    # 영숫자
+    r'一-鿿'                # 한자(CJK 통합)
+    r'\s'                           # 공백
+    r'.,·:;~!?@#%&*()\[\]{}<>/\\\-_=+\'"“”‘’『』「」【】◁▷①-⑳ㅇㆍ▢□■○●△▲%원년월일]+'
+)
+
+
+def _clean_hwp_text(text: str) -> str:
+    """HWP 추출 텍스트에서 제어문자·깨진 글리프 노이즈 제거."""
+    text = _NOISE_PAT.sub(' ', text)
+    # 허용 문자만 추려서 이어붙임 (깨진 CJK 글리프 토막 제거)
+    text = ' '.join(_KEEP_PAT.findall(text))
+    text = re.sub(r'\s+', ' ', text)
+    return text.strip()
+
+
+# HWP/HWPX는 페이지 개념이 없어 한 덩어리로 추출됨.
+# PDF 평균 페이지 분량(~1800자)으로 잘라 가상 페이지를 만들어
+# 페이지 기반 사업개요 추출 로직(extract_project_overview)과 호환시킨다.
+_VIRTUAL_PAGE_SIZE = 1800
+
+
+def _paginate(text: str, size: int = _VIRTUAL_PAGE_SIZE) -> list[dict]:
+    """긴 텍스트를 가상 페이지 리스트 [{page, text}]로 분할."""
+    if not text:
+        return []
+    pages = []
+    for idx, start in enumerate(range(0, len(text), size), 1):
+        pages.append({"page": idx, "text": text[start:start + size]})
+    return pages
+
+
+def extract_text_hwpx(path: str) -> list[dict]:
+    """HWPX(ZIP+OWPML XML) 텍스트 추출. PDF와 동일하게 [{page, text}] 반환."""
+    try:
+        with zipfile.ZipFile(path) as z:
+            section_names = sorted(
+                n for n in z.namelist()
+                if 'section' in n.lower() and n.endswith('.xml')
+            )
+            parts = []
+            for n in section_names:
+                raw = z.read(n).decode('utf-8', errors='ignore')
+                # <hp:t>...</hp:t> 등 텍스트 노드 사이 내용만 남기고 태그 제거
+                txt = re.sub(r'<[^>]+>', ' ', raw)
+                parts.append(txt)
+        full = _clean_hwp_text(' '.join(parts))
+        return _paginate(full)
+    except Exception as e:
+        print(f"  [HWPX 추출 실패] {Path(path).name}: {e}")
+        return []
+
+
+def extract_text_hwp(path: str) -> list[dict]:
+    """HWP(OLE 복합 + zlib) 본문 텍스트 추출. PDF와 동일하게 [{page, text}] 반환."""
+    try:
+        import olefile
+    except ImportError:
+        print("  [HWP 추출 실패] olefile 미설치: pip install olefile")
+        return []
+
+    try:
+        ole = olefile.OleFileIO(path)
+        header = ole.openstream('FileHeader').read()
+        compressed = bool(header[36] & 1)
+
+        sections = sorted(e for e in ole.listdir() if e and e[0] == 'BodyText')
+        parts = []
+        for entry in sections:
+            data = ole.openstream(entry).read()
+            if compressed:
+                data = zlib.decompress(data, -15)
+            parts.append(_parse_hwp_records(data))
+        ole.close()
+
+        full = _clean_hwp_text(' '.join(parts))
+        return _paginate(full)
+    except Exception as e:
+        print(f"  [HWP 추출 실패] {Path(path).name}: {e}")
+        return []
+
+
+def _parse_hwp_records(data: bytes) -> str:
+    """HWP BodyText 섹션의 레코드 스트림에서 HWPTAG_PARA_TEXT(67) 추출."""
+    text = []
+    i = 0
+    n = len(data)
+    while i < n - 4:
+        rec = struct.unpack('<I', data[i:i+4])[0]
+        tag_id = rec & 0x3ff
+        size = (rec >> 20) & 0xfff
+        i += 4
+        if size == 0xfff:
+            if i + 4 > n:
+                break
+            size = struct.unpack('<I', data[i:i+4])[0]
+            i += 4
+        payload = data[i:i+size]
+        i += size
+        if tag_id == 67:  # HWPTAG_PARA_TEXT
+            text.append(_decode_para_text(payload))
+    return '\n'.join(text)
+
+
+# HWP PARA_TEXT 인라인 컨트롤 문자 분류 (WCHAR 단위)
+#  - 개행류(1 WCHAR): 10, 13
+#  - 무시(1 WCHAR): 0, 24~31
+#  - 인라인/확장 컨트롤(8 WCHAR = 16 byte 점유): 그 외 1~31
+_HWP_CTRL_1WCHAR = {0, 10, 13, 24, 25, 26, 27, 28, 29, 30, 31}
+
+
+def _decode_para_text(payload: bytes) -> str:
+    """PARA_TEXT WCHAR 배열을 디코딩하며 컨트롤 코드를 규격대로 건너뜀."""
+    out = []
+    j = 0
+    L = len(payload) - (len(payload) % 2)
+    while j < L:
+        code = payload[j] | (payload[j+1] << 8)
+        if code < 32:
+            if code in (10, 13):
+                out.append('\n')
+                j += 2
+            elif code in _HWP_CTRL_1WCHAR:
+                j += 2
+            else:
+                # 인라인/확장 컨트롤: 8 WCHAR(16 byte) 점유
+                j += 16
+        else:
+            out.append(chr(code))
+            j += 2
+    return ''.join(out)
+
+
+def extract_text_auto(path: str) -> list[dict]:
+    """확장자에 따라 적절한 추출기 선택. [{page, text}] 반환."""
+    ext = Path(path).suffix.lower()
+    if ext == '.pdf':
+        return extract_text_by_page(path)
+    if ext == '.hwpx':
+        return extract_text_hwpx(path)
+    if ext == '.hwp':
+        return extract_text_hwp(path)
+    return []
+
+
 # ── 사업 개요 추출 ────────────────────────────────────────────
 
 def extract_project_overview(pages: list[dict]) -> dict:
@@ -115,12 +272,18 @@ def extract_project_overview(pages: list[dict]) -> dict:
             req_start = p["page"]
             break
 
+    # 요구사항 섹션 직전까지를 사업개요 범위로. 단 최소 3페이지는 보장
+    # (요구사항 ID·키워드가 도입부에서 일찍 감지돼 limit=0이 되는 경우 방지)
     limit = min((req_start - 1) if req_start else 30, 30)
+    limit = max(limit, 3)
     candidate_pages = [p for p in pages if p["page"] <= limit]
 
     keyword_pages = [p for p in candidate_pages if any(k in p["text"] for k in OVERVIEW_KEYWORDS)]
     target_pages = keyword_pages or candidate_pages
 
+    # 그래도 비면 문서 앞부분(최대 5페이지)을 fallback으로 사용
+    if not target_pages:
+        target_pages = pages[:5]
     if not target_pages:
         return {}
 

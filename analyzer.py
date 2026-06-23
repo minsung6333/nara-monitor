@@ -11,8 +11,8 @@ from concurrent.futures import ThreadPoolExecutor, as_completed
 from openai import OpenAI
 from dotenv import load_dotenv
 
-from downloader import download_files, select_files
-from extractor import extract_text_by_page, extract_project_overview, format_overview_text
+from downloader import download_files, select_files, EXTRACTABLE_EXTS
+from extractor import extract_text_auto, extract_project_overview, format_overview_text
 
 load_dotenv()
 client = OpenAI(api_key=os.getenv("OPENAI_API_KEY"))
@@ -62,6 +62,14 @@ ANALYZE_SYSTEM = """당신은 공공조달 제안 전략 전문가입니다.
 - content_summary: 공고/RFP 내용을 객관적으로 요약. 첨부문서 없으면 공고명·메타 기반으로 작성
 - match_points: 회사 역량이 RFP 요건과 구체적으로 맞는 부분
 - gap_points: 충족하기 어려운 요건, 리스크
+
+[사업 개요(RFP)가 제공되지 않은 경우 — 매우 중요]
+- 사업 개요가 "(첨부문서 없음 또는 추출 실패)"인 경우, 공고명·기관·금액 등 제한된 메타 정보만으로 판단해야 합니다.
+- 이때는 실제 과업 내용·요구 기술·규모를 확인할 수 없으므로 적합성을 확신할 수 없습니다.
+- 따라서 보수적으로 평가하세요: 메타 정보만으로 회사와 명백히 강하게 부합하는 예외적 경우가 아니라면 HIGH(70+)를 부여하지 마세요.
+- 정보가 부족해 판단이 어려우면 MED 이하로 두고, gap_points에 "RFP 미확보로 상세 검토 필요"를 명시하세요.
+- 점수를 인위적으로 깎으라는 의미가 아니라, 근거가 부족한 확신(특히 HIGH)을 피하라는 의미입니다.
+
 - 반드시 위 JSON만 반환"""
 
 
@@ -121,6 +129,10 @@ def analyze_notice(notice: dict, profile: dict, dest_dir: str = None) -> dict:
     """
     공고 1건: PDF 다운로드 → 사업 개요 추출 → 상세 적합도 평가.
     반환: notice에 'overview', 'analysis' 필드 추가
+
+    동작:
+    - RFP 문서(제안요청서/과업지시서) 없거나 사업 개요 추출 실패 시
+      → 2단계 LLM 호출 스킵, 1단계 스크리닝 결과를 그대로 사용
     """
     files = notice.get("files", [])
     overview = {}
@@ -130,18 +142,37 @@ def analyze_notice(notice: dict, profile: dict, dest_dir: str = None) -> dict:
             dest_dir = tempfile.mkdtemp(prefix="nara_")
 
         downloaded = download_files(files, dest_dir)
-        pdf_files = [d for d in downloaded if d["ext"] == ".pdf"]
+        doc_files = [d for d in downloaded if d["ext"] in EXTRACTABLE_EXTS]
 
-        for d in pdf_files:
+        for d in doc_files:
             try:
-                pages = extract_text_by_page(d["local_path"])
+                pages = extract_text_auto(d["local_path"])
+                if not pages:
+                    continue
                 overview = extract_project_overview(pages)
                 if overview:
                     break
             except Exception as e:
                 print(f"  [추출 실패] {d['name']}: {e}")
 
+    # RFP 문서 추출 성공 → 사업 개요 기반 상세 분석
+    # RFP 문서 없음/추출 실패 → 공고 제목·메타만으로 분석 (GPT 호출, overview는 빈 값)
     analysis = _analyze_with_llm(notice, overview, profile)
+
+    # GPT 호출 실패 등으로 결과가 비면 1단계 스크리닝 결과로 보강
+    if not analysis or not analysis.get("verdict"):
+        relevance = notice.get("relevance", "MED")
+        analysis = {
+            "score":           {"HIGH": 75, "MED": 55, "LOW": 25}.get(relevance, 50),
+            "verdict":         relevance,
+            "content_summary": notice.get("title", ""),
+            "summary":         notice.get("screen_reason", "1단계 스크리닝 결과 사용"),
+            "match_points":    [],
+            "gap_points":      [],
+            "action":          "공고 본문 직접 확인 필요",
+        }
+    if not overview:
+        analysis["_no_rfp"] = True  # RFP 없이 메타 기반 분석임을 표시
     return {**notice, "overview": overview, "analysis": analysis}
 
 

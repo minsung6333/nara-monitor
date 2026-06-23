@@ -2,6 +2,11 @@
 """
 멀티 고객 실행 엔트리포인트.
 customers/ 폴더의 모든 활성 고객을 순회하며 수집→분석→발송.
+
+옵션:
+  python main.py [YYYYMMDD] [--use-cache] [--no-mail]
+    --use-cache : 캐시된 분석 결과 재사용 (LLM 호출 비용 0원)
+    --no-mail   : 메일 발송 없이 HTML/Excel만 생성
 """
 import json
 import sys
@@ -11,6 +16,42 @@ from pathlib import Path
 from collector import collect
 from analyzer import run_pipeline, load_profile
 from mailer import send_report
+
+CACHE_DIR = Path(__file__).parent / "cache"
+
+
+def _cache_path(date_str: str, cid: str) -> Path:
+    return CACHE_DIR / date_str / f"{cid}.json"
+
+
+def _load_cache(date_str: str, cid: str) -> dict | None:
+    path = _cache_path(date_str, cid)
+    if not path.exists():
+        return None
+    try:
+        with open(path, encoding="utf-8") as f:
+            data = json.load(f)
+        print(f"  [캐시 로드] {path.relative_to(Path(__file__).parent)}")
+        return data
+    except Exception as e:
+        print(f"  [캐시 로드 실패] {e}")
+        return None
+
+
+def _save_cache(date_str: str, cid: str, notices: list, screened_all: list, results: list) -> None:
+    path = _cache_path(date_str, cid)
+    path.parent.mkdir(parents=True, exist_ok=True)
+    payload = {
+        "date_str":     date_str,
+        "cid":          cid,
+        "saved_at":     datetime.now().isoformat(),
+        "notices":      notices,
+        "screened_all": screened_all,
+        "results":      results,
+    }
+    with open(path, "w", encoding="utf-8") as f:
+        json.dump(payload, f, ensure_ascii=False, indent=2, default=str)
+    print(f"  [캐시 저장] {path.relative_to(Path(__file__).parent)}")
 
 
 def _load_customers() -> list[dict]:
@@ -39,7 +80,8 @@ def _load_customers() -> list[dict]:
     return result
 
 
-def _run_customer(customer: dict, date_str: str, days_back: int) -> None:
+def _run_customer(customer: dict, date_str: str, days_back: int,
+                  use_cache: bool = False, send_mail: bool = True) -> None:
     cid     = customer["id"]
     config  = customer["config"]
     profile = customer["profile"]
@@ -53,13 +95,25 @@ def _run_customer(customer: dict, date_str: str, days_back: int) -> None:
     print(f"# 고객: {company}  [{cid}]")
     print(f"{'#'*60}")
 
-    notices = collect(
-        date_str,
-        days_back=days_back,
-        keywords=keywords,
-        tracked_agencies=tracked_agencies,
-    )
-    results, screened_all = run_pipeline(notices, profile, return_screened=True)
+    notices = screened_all = results = None
+    if use_cache:
+        cached = _load_cache(date_str, cid)
+        if cached:
+            notices      = cached.get("notices", [])
+            screened_all = cached.get("screened_all", [])
+            results      = cached.get("results", [])
+            print(f"  → 캐시 사용 (LLM 호출 0회): 수집 {len(notices)}건 · 분석 {len(results)}건")
+
+    if notices is None:
+        notices = collect(
+            date_str,
+            days_back=days_back,
+            keywords=keywords,
+            tracked_agencies=tracked_agencies,
+        )
+        results, screened_all = run_pipeline(notices, profile, return_screened=True)
+        # 캐시 저장 (다음 실행에 재사용)
+        _save_cache(date_str, cid, notices, screened_all, results)
 
     is_monday = now.weekday() == 6  # UTC 일요일 = KST 월요일
     subject = None
@@ -75,7 +129,7 @@ def _run_customer(customer: dict, date_str: str, days_back: int) -> None:
         keywords=keywords,
         tracked_agencies=tracked_agencies,
         save=True,
-        mail=True,
+        mail=send_mail,
         subject=subject,
         mail_to=mail_to,
         report_prefix=cid,
@@ -85,7 +139,12 @@ def _run_customer(customer: dict, date_str: str, days_back: int) -> None:
 if __name__ == "__main__":
     sys.stdout.reconfigure(encoding="utf-8")
 
-    date_arg = sys.argv[1] if len(sys.argv) > 1 else None
+    # 인자 파싱
+    args = sys.argv[1:]
+    use_cache = "--use-cache" in args
+    send_mail = "--no-mail" not in args
+    positional = [a for a in args if not a.startswith("--")]
+    date_arg = positional[0] if positional else None
 
     now = datetime.now()
     # GitHub Actions는 UTC 기준: UTC 일요일(6) = KST 월요일
@@ -104,11 +163,16 @@ if __name__ == "__main__":
         sys.exit(1)
 
     day_label = "금요일" if now.weekday() == 6 else "전일"
-    print(f"\n고객 {len(customers)}개 처리 시작 — {date_str} ({day_label} 기준, days_back={days_back})")
+    flags = []
+    if use_cache: flags.append("USE_CACHE")
+    if not send_mail: flags.append("NO_MAIL")
+    flag_str = f" [{', '.join(flags)}]" if flags else ""
+    print(f"\n고객 {len(customers)}개 처리 시작 — {date_str} ({day_label} 기준, days_back={days_back}){flag_str}")
     errors = []
     for customer in customers:
         try:
-            _run_customer(customer, date_str, days_back)
+            _run_customer(customer, date_str, days_back,
+                         use_cache=use_cache, send_mail=send_mail)
         except Exception as e:
             errors.append((customer["id"], e))
             print(f"\n[오류] {customer['id']}: {e}")
