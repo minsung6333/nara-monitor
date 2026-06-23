@@ -34,6 +34,8 @@ jobs:
           MAIL_FROM:        ${{ secrets.MAIL_FROM }}
           MAIL_FROM_NAME:   ${{ secrets.MAIL_FROM_NAME }}
           MAIL_TO:          ${{ secrets.MAIL_TO }}
+          PROXY_URL:        ${{ secrets.PROXY_URL }}
+          PROXY_TOKEN:      ${{ secrets.PROXY_TOKEN }}
         run: python -u main.py
 
       - name: Upload report

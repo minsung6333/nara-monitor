@@ -5,6 +5,13 @@ import requests
 from urllib.parse import unquote
 from pathlib import Path
 
+# 나라장터(www.g2b.go.kr)는 해외 IP 다운로드를 차단함.
+# GitHub Actions(해외 IP)에서는 한국 IP 프록시(Vercel icn1)를 경유해야 한다.
+# PROXY_URL이 설정돼 있으면 프록시 경유, 없으면 직접 다운로드(로컬·한국 IP).
+PROXY_URL   = os.getenv('PROXY_URL', '')     # 예: https://nara-proxy.vercel.app/api/download
+PROXY_TOKEN = os.getenv('PROXY_TOKEN', '')
+PROXY_CHUNK = 4 * 1024 * 1024                # 프록시 응답 4MB 제한 → 청크 크기
+
 # 같은 사업의 문서가 여러 포맷으로 올라온 경우 우선순위 (낮을수록 우선)
 # PDF가 가장 깔끔하지만, HWP/HWPX도 직접 파싱(extractor)으로 추출 가능
 _EXT_PRIORITY = {
@@ -89,30 +96,78 @@ def select_files(files: list[dict]) -> list[dict]:
     return [f for _, f in best.values()]
 
 
+def _fetch_direct(url: str) -> tuple[bytes, str]:
+    """g2b에서 직접 다운로드 (한국 IP 환경). (내용, 파일명) 반환."""
+    resp = requests.get(url, timeout=30)
+    resp.raise_for_status()
+    return resp.content, _get_filename_from_response(resp, url)
+
+
+def _fetch_via_proxy(url: str) -> tuple[bytes, str]:
+    """
+    한국 IP 프록시(Vercel icn1) 경유 다운로드. (내용, 파일명) 반환.
+    4MB 초과 파일은 start/end 청크로 나눠 받아 이어붙인다.
+    """
+    params = {'url': url, 'token': PROXY_TOKEN}
+    r = requests.get(PROXY_URL, params=params, timeout=60)
+
+    # 4MB 이하: 한 번에 수신
+    if r.status_code == 200:
+        filename = _get_filename_from_response(r, url)
+        return r.content, filename
+
+    # 4MB 초과: 청크 분할 (413 + X-Total-Length)
+    if r.status_code == 413:
+        total = int(r.headers.get('X-Total-Length', '0'))
+        if total <= 0:
+            raise RuntimeError('프록시 413인데 X-Total-Length 없음')
+        buf = bytearray()
+        filename = ''
+        for start in range(0, total, PROXY_CHUNK):
+            end = min(start + PROXY_CHUNK, total)
+            cr = requests.get(
+                PROXY_URL,
+                params={'url': url, 'token': PROXY_TOKEN, 'start': start, 'end': end},
+                timeout=60,
+            )
+            cr.raise_for_status()
+            buf.extend(cr.content)
+            if not filename:
+                filename = _get_filename_from_response(cr, url)
+        return bytes(buf), filename
+
+    r.raise_for_status()
+    raise RuntimeError(f'프록시 예상치 못한 응답: {r.status_code}')
+
+
 def download_files(files: list[dict], dest_dir: str = None) -> list[dict]:
     """
     files: select_files() 결과 또는 raw files 리스트
     dest_dir: 저장 경로 (None이면 임시 디렉터리 생성)
     반환: [{'name': str, 'url': str, 'local_path': str, 'ext': str}, ...]
     PDF가 아닌 파일(HWP 등)도 경로는 반환하되 ext 필드로 구분 가능
+
+    PROXY_URL 설정 시 한국 IP 프록시 경유, 미설정 시 직접 다운로드.
     """
     if dest_dir is None:
         dest_dir = tempfile.mkdtemp(prefix='nara_')
     os.makedirs(dest_dir, exist_ok=True)
 
+    use_proxy = bool(PROXY_URL and PROXY_TOKEN)
     results = []
     selected = select_files(files)
 
     for f in selected:
         url = f['url']
         try:
-            resp = requests.get(url, timeout=30)
-            resp.raise_for_status()
+            if use_proxy:
+                content, filename = _fetch_via_proxy(url)
+            else:
+                content, filename = _fetch_direct(url)
         except Exception as e:
             print(f"  [다운로드 실패] {url}: {e}")
             continue
 
-        filename = _get_filename_from_response(resp, url)
         # 같은 이름 파일이 이미 있으면 번호 붙임
         local_path = os.path.join(dest_dir, filename)
         if os.path.exists(local_path):
@@ -120,10 +175,10 @@ def download_files(files: list[dict], dest_dir: str = None) -> list[dict]:
             local_path = os.path.join(dest_dir, f"{stem}_1{suffix}")
 
         with open(local_path, 'wb') as fp:
-            fp.write(resp.content)
+            fp.write(content)
 
         ext = Path(filename).suffix.lower()
-        print(f"  [다운로드] {filename} ({len(resp.content):,} bytes)")
+        print(f"  [다운로드] {filename} ({len(content):,} bytes)")
 
         # placeholder(사전규격 '규격문서N')로 통과한 파일은
         # 실제 파일명(Content-Disposition)으로 RFP 키워드 재판별
