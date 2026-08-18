@@ -1,0 +1,25 @@
+name: Keep Alive
+
+# GitHub은 저장소가 60일간 활동 없으면 scheduled workflow를 자동 정지시킴.
+# 2주마다 빈 커밋을 남겨 카운터를 리셋 → daily 모니터가 계속 동작하도록 유지.
+
+on:
+  schedule:
+    - cron: '0 3 * * 1'   # 매주 월요일 UTC 03:00 (KST 12:00)
+  workflow_dispatch:
+
+jobs:
+  keepalive:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v5
+
+      - name: Empty commit to keep repo active
+        run: |
+          git config user.name  "Keep Alive Bot"
+          git config user.email "bot@clabi.ai"
+          git commit --allow-empty -m "chore: keep-alive (scheduled workflow 유지)"
+          git push
