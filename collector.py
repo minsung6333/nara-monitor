@@ -1,8 +1,28 @@
+import os
 import requests
+from urllib.parse import urlencode
 from datetime import datetime, timedelta
 from config import SERVICE_KEY, KEYWORDS, ENDPOINTS, COLLECT_SERVC, COLLECT_THNG, COLLECT_CNSTWK
 
 ROWS_PER_PAGE = 100
+
+# 나라장터 수집 API(apis.data.go.kr)도 해외 IP를 차단하므로,
+# GitHub Actions(해외 IP)에서는 한국 IP 프록시(Vercel icn1)를 경유한다.
+# PROXY_URL 설정 시 프록시 경유, 없으면 직접 호출(로컬·한국 IP).
+PROXY_URL   = os.getenv('PROXY_URL', '')
+PROXY_TOKEN = os.getenv('PROXY_TOKEN', '')
+
+
+def _api_get(url: str, params: dict, timeout: int = 15) -> requests.Response:
+    """API GET 호출. PROXY_URL 있으면 한국 IP 프록시 경유."""
+    if PROXY_URL and PROXY_TOKEN:
+        full = url + '?' + urlencode(params)
+        return requests.get(
+            PROXY_URL,
+            params={'url': full, 'token': PROXY_TOKEN},
+            timeout=timeout,
+        )
+    return requests.get(url, params=params, timeout=timeout)
 
 
 def _fetch_all_pages(url: str, base_params: dict) -> list:
@@ -13,7 +33,7 @@ def _fetch_all_pages(url: str, base_params: dict) -> list:
     while True:
         params = {**base_params, 'pageNo': str(page), 'numOfRows': str(ROWS_PER_PAGE)}
         try:
-            res = requests.get(url, params=params, timeout=10)
+            res = _api_get(url, params)
             res.raise_for_status()
             data = res.json()
         except Exception as e:
