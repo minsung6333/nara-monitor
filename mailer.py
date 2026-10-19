@@ -18,7 +18,8 @@ load_dotenv()
 def build_html(results: list[dict], date_str: str, total_collected: int,
                screened_all: list[dict] = None,
                company_name: str = "", keywords: list[str] = None,
-               tracked_agencies: list[str] = None) -> str:
+               tracked_agencies: list[str] = None,
+               start_str: str = None) -> str:
     high = [r for r in results if r.get("analysis", {}).get("verdict") == "HIGH"]
     med  = [r for r in results if r.get("analysis", {}).get("verdict") == "MED"]
 
@@ -30,6 +31,9 @@ def build_html(results: list[dict], date_str: str, total_collected: int,
     ]
 
     date_label = f"{date_str[:4]}년 {date_str[4:6]}월 {date_str[6:]}일"
+    if start_str and start_str != date_str:  # 월요일: 금~일 범위
+        date_label = (f"{start_str[:4]}년 {start_str[4:6]}월 {start_str[6:]}일"
+                      f" ~ {date_str[4:6]}월 {date_str[6:]}일")
     kw_str = ", ".join(keywords) if keywords else ""
 
     greeting = _greeting(company_name, date_label, kw_str, total_collected)
@@ -132,7 +136,7 @@ def _greeting(company_name: str, date_label: str, kw_str: str, total: int) -> st
     <div style="font-size:14px;color:#2d3748;line-height:1.9;border-left:3px solid #7c8cf8;padding-left:14px;">
       안녕하세요, {name_part}.<br>
       <b>{date_label}</b> 나라장터에 등록된 공고 중 {kw_part} 검색·분석한 결과를 전달드립니다.<br>
-      오늘 총 <b>{total}건</b>이 수집되었으며, AI가 클라비 사업 역량과의 관련성을 검토했습니다.
+      총 <b>{total}건</b>이 수집되었으며, AI가 클라비 사업 역량과의 관련성을 검토했습니다.
     </div>
   </td></tr>"""
 
@@ -814,10 +818,10 @@ def send_report(results: list[dict], date_str: str, total_collected: int,
                 tracked_agencies: list[str] = None,
                 save: bool = True, mail: bool = True,
                 subject: str = None, mail_to: str = None,
-                report_prefix: str = "") -> None:
+                report_prefix: str = "", start_str: str = None) -> None:
     html = build_html(results, date_str, total_collected, screened_all,
                       company_name=company_name, keywords=keywords,
-                      tracked_agencies=tracked_agencies)
+                      tracked_agencies=tracked_agencies, start_str=start_str)
     excel_path = ""
     if save:
         prefix = f"{report_prefix}_" if report_prefix else ""

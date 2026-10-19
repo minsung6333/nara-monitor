@@ -20,6 +20,8 @@ client = OpenAI(api_key=os.getenv("OPENAI_API_KEY"))
 MODEL_SCREEN = "gpt-5.4"
 MODEL_ANALYZE = "gpt-5.4"
 MAX_WORKERS   = 5   # 병렬 분석 동시 처리 수
+SCREEN_BATCH_SIZE = 80  # 1단계 스크리닝 배치당 공고 수
+SCREEN_WORKERS    = 3   # 스크리닝 배치 병렬 수
 
 # ── 프롬프트 ──────────────────────────────────────────────────
 
@@ -75,6 +77,36 @@ ANALYZE_SYSTEM = """당신은 공공조달 제안 전략 전문가입니다.
 
 # ── 1단계: 제목 스크리닝 ──────────────────────────────────────
 
+def _screen_batch(chunk: list[dict], profile_text: str, offset: int) -> dict:
+    """공고 chunk 1배치를 스크리닝. 반환: {전체 idx: 결과}. 실패 시 1회 재시도."""
+    lines = []
+    for i, n in enumerate(chunk):
+        amt = f"{int(n['amount']):,}원" if n.get('amount') and str(n['amount']).isdigit() else "미공개"
+        lines.append(
+            f"[{i}] [{n['source']}·{n['type']}] {n['title']}\n"
+            f"    기관: {n.get('agency', '')} | 금액: {amt}"
+        )
+    user_msg = f"## 회사 프로필\n{profile_text}\n\n## 공고 목록\n" + "\n\n".join(lines)
+
+    for attempt in (1, 2):
+        try:
+            resp = client.chat.completions.create(
+                model=MODEL_SCREEN,
+                messages=[
+                    {"role": "system", "content": SCREEN_SYSTEM},
+                    {"role": "user",   "content": user_msg},
+                ],
+                temperature=0,
+                response_format={"type": "json_object"},
+                timeout=180,
+            )
+            data = json.loads(resp.choices[0].message.content or "{}")
+            return {offset + r["idx"]: r for r in data.get("results", [])}
+        except Exception as e:
+            print(f"  [스크리닝 실패 {attempt}/2] offset={offset}: {e}")
+    return {}
+
+
 def screen_titles(notices: list[dict], profile: dict) -> list[dict]:
     """
     전체 공고 제목·메타를 LLM에 한 번에 전송해 HIGH/MED/LOW 분류.
@@ -85,32 +117,13 @@ def screen_titles(notices: list[dict], profile: dict) -> list[dict]:
 
     profile_text = _format_profile(profile)
 
-    lines = []
-    for i, n in enumerate(notices):
-        amt = f"{int(n['amount']):,}원" if n.get('amount') and str(n['amount']).isdigit() else "미공개"
-        lines.append(
-            f"[{i}] [{n['source']}·{n['type']}] {n['title']}\n"
-            f"    기관: {n.get('agency', '')} | 금액: {amt}"
-        )
-
-    user_msg = f"## 회사 프로필\n{profile_text}\n\n## 공고 목록\n" + "\n\n".join(lines)
-
-    try:
-        resp = client.chat.completions.create(
-            model=MODEL_SCREEN,
-            messages=[
-                {"role": "system", "content": SCREEN_SYSTEM},
-                {"role": "user",   "content": user_msg},
-            ],
-            temperature=0,
-            response_format={"type": "json_object"},
-            timeout=120,
-        )
-        data = json.loads(resp.choices[0].message.content or "{}")
-        results = {r["idx"]: r for r in data.get("results", [])}
-    except Exception as e:
-        print(f"  [스크리닝 실패] {e}")
-        results = {}
+    # 공고가 많으면(월요일 3일치 등) 한 번에 보내다 타임아웃으로 전체가 LOW 처리되므로 배치 분할
+    batches = [(s, notices[s:s + SCREEN_BATCH_SIZE]) for s in range(0, len(notices), SCREEN_BATCH_SIZE)]
+    results = {}
+    with ThreadPoolExecutor(max_workers=min(SCREEN_WORKERS, len(batches))) as executor:
+        futures = [executor.submit(_screen_batch, chunk, profile_text, offset) for offset, chunk in batches]
+        for f in futures:
+            results.update(f.result())
 
     enriched = []
     for i, n in enumerate(notices):

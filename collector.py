@@ -1,10 +1,13 @@
 import os
+import time
 import requests
 from urllib.parse import urlencode
 from datetime import datetime, timedelta
 from config import SERVICE_KEY, KEYWORDS, ENDPOINTS, COLLECT_SERVC, COLLECT_THNG, COLLECT_CNSTWK
 
 ROWS_PER_PAGE = 100
+MAX_RETRIES = 3
+ORDER_PLAN_MONTHS_AHEAD = 12  # 발주계획은 발주시기가 먼 미래(최대 1년)인 건도 게시됨
 
 # 나라장터 수집 API(apis.data.go.kr)도 해외 IP를 차단하므로,
 # GitHub Actions(해외 IP)에서는 한국 IP 프록시(Vercel icn1)를 경유한다.
@@ -25,6 +28,32 @@ def _api_get(url: str, params: dict, timeout: int = 15) -> requests.Response:
     return requests.get(url, params=params, timeout=timeout)
 
 
+def _get_json_with_retry(url: str, params: dict, page: int):
+    """타임아웃·일시 오류 시 재시도. 모두 실패하면 None"""
+    for attempt in range(1, MAX_RETRIES + 1):
+        try:
+            res = _api_get(url, params, timeout=30)
+            res.raise_for_status()
+            return res.json()
+        except Exception as e:
+            print(f"    [오류] {url} / 페이지 {page} ({attempt}/{MAX_RETRIES}): {e}")
+            if attempt < MAX_RETRIES:
+                time.sleep(2 * attempt)
+    return None
+
+
+def _order_month_params(window_start: str) -> dict:
+    """
+    발주계획 API는 게시일시 AND 발주년월 범위를 함께 적용하며, 발주년월을 생략하면
+    '조회 시점 기준 한 달'로 제한된다. 발주시기가 먼 계획이 누락되지 않도록 명시한다.
+    window_start: 수집 시작일 'YYYYMMDD'
+    """
+    start = datetime.strptime(window_start, '%Y%m%d')
+    bgn = (start.replace(day=1) - timedelta(days=1)).strftime('%Y%m')  # 전월(경계 보정)
+    total = start.year * 12 + (start.month - 1) + ORDER_PLAN_MONTHS_AHEAD
+    return {'orderBgnYm': bgn, 'orderEndYm': f"{total // 12}{total % 12 + 1:02d}"}
+
+
 def _fetch_all_pages(url: str, base_params: dict) -> list:
     """페이지네이션 처리해서 전체 결과 반환"""
     all_items = []
@@ -32,12 +61,9 @@ def _fetch_all_pages(url: str, base_params: dict) -> list:
 
     while True:
         params = {**base_params, 'pageNo': str(page), 'numOfRows': str(ROWS_PER_PAGE)}
-        try:
-            res = _api_get(url, params)
-            res.raise_for_status()
-            data = res.json()
-        except Exception as e:
-            print(f"    [오류] {url} / 페이지 {page}: {e}")
+        data = _get_json_with_retry(url, params, page)
+        if data is None:
+            print(f"    [경고] 페이지 {page} 수집 실패 — 이후 결과 누락 가능")
             break
 
         header = data['response']['header']
@@ -273,14 +299,17 @@ def collect_order_plans(date_str: str, days_back: int = 1, keywords: list = None
     if COLLECT_THNG:   targets.append(('plan_thng',   '물품'))
     if COLLECT_CNSTWK: targets.append(('plan_cnstwk', '공사'))
 
+    order_ym = _order_month_params(prev_day)
+
     for endpoint_key, biz_type in targets:
-        print(f"  [발주계획/{biz_type}] 전체 수집 중...")
+        print(f"  [발주계획/{biz_type}] 전체 수집 중... (발주년월 {order_ym['orderBgnYm']}~{order_ym['orderEndYm']})")
         params = {
             'ServiceKey': SERVICE_KEY,
             'type': 'json',
             'inqryDiv': '1',
             'inqryBgnDt': date_start,
             'inqryEndDt': date_end,
+            **order_ym,
         }
         items = _fetch_all_pages(ENDPOINTS[endpoint_key], params)
         print(f"    → {len(items)}건 수집, 키워드 필터링 중...")
@@ -369,6 +398,8 @@ def collect_by_agencies(
                 'inqryEndDt': date_end,
                 param_name: agency,
             }
+            if endpoint_key.startswith('plan_'):
+                params.update(_order_month_params(prev_day))
             items = _fetch_all_pages(ENDPOINTS[endpoint_key], params)
             for item in items:
                 # 키워드 2차 필터 (있는 경우)

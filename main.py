@@ -4,13 +4,15 @@
 customers/ 폴더의 모든 활성 고객을 순회하며 수집→분석→발송.
 
 옵션:
-  python main.py [YYYYMMDD] [--use-cache] [--no-mail]
+  python main.py [종료일YYYYMMDD [days_back]] [--use-cache] [--no-mail]
+    종료일 생략 : KST 기준 자동 계산 (resolve_window 참고)
+    days_back   : 종료일로부터 며칠 전부터 수집할지 (기본 0 = 종료일 하루)
     --use-cache : 캐시된 분석 결과 재사용 (LLM 호출 비용 0원)
     --no-mail   : 메일 발송 없이 HTML/Excel만 생성
 """
 import json
 import sys
-from datetime import datetime, timedelta
+from datetime import datetime, timedelta, timezone
 from pathlib import Path
 
 from collector import collect
@@ -18,6 +20,21 @@ from analyzer import run_pipeline, load_profile
 from mailer import send_report
 
 CACHE_DIR = Path(__file__).parent / "cache"
+KST = timezone(timedelta(hours=9))
+
+
+def resolve_window(now_kst: datetime) -> tuple[str, int]:
+    """
+    수집 구간 계산. 반환: (종료일 'YYYYMMDD', days_back) → [종료일-days_back 0000 ~ 종료일 2359]
+
+    실행 시각(GitHub Actions 지연 포함)과 무관하게 'KST 기준 직전 영업일 이후 ~ 어제'
+    전체를 수집하므로 구간이 비거나 겹치지 않는다.
+      - 화~금 실행: 어제 하루
+      - 월요일 실행: 금~일 (주말 게시분 포함)
+    """
+    yesterday = now_kst - timedelta(days=1)
+    days_back = 2 if now_kst.weekday() == 0 else 0
+    return yesterday.strftime("%Y%m%d"), days_back
 
 
 def _cache_path(date_str: str, cid: str) -> Path:
@@ -90,6 +107,7 @@ def _run_customer(customer: dict, date_str: str, days_back: int,
     tracked_agencies = config.get("tracked_agencies") or []
     mail_to          = config.get("mail_to", "")
     company          = config.get("company_name", cid)
+    start_str = (datetime.strptime(date_str, "%Y%m%d") - timedelta(days=days_back)).strftime("%Y%m%d")
 
     print(f"\n{'#'*60}")
     print(f"# 고객: {company}  [{cid}]")
@@ -115,14 +133,14 @@ def _run_customer(customer: dict, date_str: str, days_back: int,
         # 캐시 저장 (다음 실행에 재사용)
         _save_cache(date_str, cid, notices, screened_all, results)
 
-    is_monday = now.weekday() == 6  # UTC 일요일 = KST 월요일
     subject = None
-    if is_monday:
-        dl = f"{date_str[:4]}.{date_str[4:6]}.{date_str[6:]}"
-        subject = f"[나라장터 모니터] {dl} 금요일 AI 공고 분석 리포트"
+    if start_str != date_str:  # 월요일: 금~일 범위
+        subject = (f"[나라장터 모니터] {start_str[:4]}.{start_str[4:6]}.{start_str[6:]}"
+                   f" ~ {date_str[4:6]}.{date_str[6:]} AI 공고 분석 리포트")
 
     send_report(
         results, date_str,
+        start_str=start_str,
         total_collected=len(notices),
         screened_all=screened_all,
         company_name=company,
@@ -144,30 +162,21 @@ if __name__ == "__main__":
     use_cache = "--use-cache" in args
     send_mail = "--no-mail" not in args
     positional = [a for a in args if not a.startswith("--")]
-    date_arg = positional[0] if positional else None
-
-    now = datetime.now()
-    # GitHub Actions는 UTC 기준: UTC 일요일(6) = KST 월요일
-    # → 월요일 실행 시 금요일(2일 전) 공고 수집, 나머지는 전날
-    if date_arg:
-        date_str = date_arg
-    elif now.weekday() == 6:  # UTC 일요일 = KST 월요일
-        date_str = (now - timedelta(days=2)).strftime("%Y%m%d")  # 금요일
+    if positional:
+        date_str = positional[0]
+        days_back = int(positional[1]) if len(positional) > 1 else 0
     else:
-        date_str = now.strftime("%Y%m%d")
-
-    days_back = 0
+        date_str, days_back = resolve_window(datetime.now(KST))
 
     customers = _load_customers()
     if not customers:
         sys.exit(1)
 
-    day_label = "금요일" if now.weekday() == 6 else "전일"
     flags = []
     if use_cache: flags.append("USE_CACHE")
     if not send_mail: flags.append("NO_MAIL")
     flag_str = f" [{', '.join(flags)}]" if flags else ""
-    print(f"\n고객 {len(customers)}개 처리 시작 — {date_str} ({day_label} 기준, days_back={days_back}){flag_str}")
+    print(f"\n고객 {len(customers)}개 처리 시작 — 종료일 {date_str}, days_back={days_back}{flag_str}")
     errors = []
     for customer in customers:
         try:

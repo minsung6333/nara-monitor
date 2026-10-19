@@ -172,5 +172,9 @@ python analyzer.py
 - `.env` 파일은 gitignore되어 있음. GitHub Secrets에 별도 등록 필요
 - `config.py`의 `SERVICE_KEY`는 fallback 하드코딩 있으나 GitHub Actions에서는 Secrets 사용
 - `customers/clabisales/profile.json`은 클라비 영업팀 관점 특화 프로필 (clabi와 다름)
-- 월요일 실행 시 금요일 공고 수집 (UTC 기준 일요일 = KST 기준 월요일 로직)
+- 수집 구간은 `main.resolve_window()`가 **KST 기준**으로 계산: 화~금은 어제 하루, 월요일은 금~일 전체.
+  (과거엔 UTC 현재 날짜를 써서, GitHub 스케줄 지연으로 UTC 자정을 넘기면 하루가 통째로 누락/중복됐음)
+- 발주계획 API는 게시일시 AND **발주년월(orderBgnYm/EndYm)** 을 함께 적용하며, 생략 시 "조회 시점 기준 한 달"로 제한됨.
+  → `collector._order_month_params()`로 전월~+12개월을 명시해야 발주시기가 먼 계획이 누락되지 않음 (2026-10 GKL 공고 누락 사례)
+- API 호출은 `_get_json_with_retry`(3회 재시도), 1단계 스크리닝은 80건 배치·병렬로 분할 (월요일 3일치 대응)
 - NaverWorks SMTP는 port 465 (SSL), starttls 아님
