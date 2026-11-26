@@ -254,10 +254,18 @@ def extract_text_auto(path: str) -> list[dict]:
     ext = Path(path).suffix.lower()
     if ext == '.pdf':
         return extract_text_by_page(path)
-    if ext == '.hwpx':
-        return extract_text_hwpx(path)
-    if ext == '.hwp':
-        return extract_text_hwp(path)
+    if ext in ('.hwp', '.hwpx'):
+        # 확장자와 실제 형식이 다른 경우가 있음(.hwp인데 HWPX zip 등) → 파일 시그니처로 판별
+        try:
+            with open(path, 'rb') as f:
+                sig = f.read(8)
+        except OSError:
+            sig = b''
+        if sig.startswith(b'PK\x03\x04'):
+            return extract_text_hwpx(path)
+        if sig.startswith(b'\xd0\xcf\x11\xe0'):
+            return extract_text_hwp(path)
+        return extract_text_hwpx(path) if ext == '.hwpx' else extract_text_hwp(path)
     return []
 
 
