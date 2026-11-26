@@ -42,16 +42,42 @@ def _get_json_with_retry(url: str, params: dict, page: int):
     return None
 
 
-def _order_month_params(window_start: str) -> dict:
+def _order_month_windows(window_start: str) -> list[dict]:
     """
     발주계획 API는 게시일시 AND 발주년월 범위를 함께 적용하며, 발주년월을 생략하면
     '조회 시점 기준 한 달'로 제한된다. 발주시기가 먼 계획이 누락되지 않도록 명시한다.
+
+    단, 2026-11 이후 API가 발주년월 범위를 '최대 2개월 · 같은 연도'로 제한한다
+    (위반 시 resultCode 07 '입력범위값 초과'). 그래서 전체 범위
+    [전월 ~ 시작월+ORDER_PLAN_MONTHS_AHEAD]를 2개월·연도 내 구간으로 쪼개 반환한다.
     window_start: 수집 시작일 'YYYYMMDD'
     """
     start = datetime.strptime(window_start, '%Y%m%d')
-    bgn = (start.replace(day=1) - timedelta(days=1)).strftime('%Y%m')  # 전월(경계 보정)
-    total = start.year * 12 + (start.month - 1) + ORDER_PLAN_MONTHS_AHEAD
-    return {'orderBgnYm': bgn, 'orderEndYm': f"{total // 12}{total % 12 + 1:02d}"}
+    first = start.year * 12 + (start.month - 1) - 1          # 전월(경계 보정)
+    last  = start.year * 12 + (start.month - 1) + ORDER_PLAN_MONTHS_AHEAD
+
+    def ym(idx: int) -> str:
+        return f"{idx // 12}{idx % 12 + 1:02d}"
+
+    windows = []
+    i = first
+    while i <= last:
+        # 다음 달이 범위 안이고 같은 연도면 2개월 묶음, 아니면 1개월 단독
+        if i + 1 <= last and (i // 12) == ((i + 1) // 12):
+            windows.append({'orderBgnYm': ym(i), 'orderEndYm': ym(i + 1)})
+            i += 2
+        else:
+            windows.append({'orderBgnYm': ym(i), 'orderEndYm': ym(i)})
+            i += 1
+    return windows
+
+
+def _fetch_plan_pages(url: str, base_params: dict, window_start: str) -> list:
+    """발주계획: 발주년월 구간별로 나눠 조회한 뒤 합친다 (중복은 호출부 uid로 제거)."""
+    items = []
+    for ym_window in _order_month_windows(window_start):
+        items.extend(_fetch_all_pages(url, {**base_params, **ym_window}))
+    return items
 
 
 def _fetch_all_pages(url: str, base_params: dict) -> list:
@@ -64,6 +90,14 @@ def _fetch_all_pages(url: str, base_params: dict) -> list:
         data = _get_json_with_retry(url, params, page)
         if data is None:
             print(f"    [경고] 페이지 {page} 수집 실패 — 이후 결과 누락 가능")
+            break
+
+        # 오류 시 API는 'response' 대신 {"nkoneps.com.response.ResponseError": {...}} 형식으로
+        # 응답한다. 이걸 KeyError로 터뜨리면 고객 처리 전체가 중단되므로 경고 후 건너뛴다.
+        if not isinstance(data, dict) or 'response' not in data:
+            err = next(iter(data.values()), {}) if isinstance(data, dict) and data else {}
+            hdr = err.get('header', {}) if isinstance(err, dict) else {}
+            print(f"    [API 오류] {hdr.get('resultCode', '?')} {hdr.get('resultMsg', str(data)[:120])}")
             break
 
         header = data['response']['header']
@@ -299,19 +333,19 @@ def collect_order_plans(date_str: str, days_back: int = 1, keywords: list = None
     if COLLECT_THNG:   targets.append(('plan_thng',   '물품'))
     if COLLECT_CNSTWK: targets.append(('plan_cnstwk', '공사'))
 
-    order_ym = _order_month_params(prev_day)
+    ym_windows = _order_month_windows(prev_day)
 
     for endpoint_key, biz_type in targets:
-        print(f"  [발주계획/{biz_type}] 전체 수집 중... (발주년월 {order_ym['orderBgnYm']}~{order_ym['orderEndYm']})")
+        print(f"  [발주계획/{biz_type}] 전체 수집 중... "
+              f"(발주년월 {ym_windows[0]['orderBgnYm']}~{ym_windows[-1]['orderEndYm']}, {len(ym_windows)}구간)")
         params = {
             'ServiceKey': SERVICE_KEY,
             'type': 'json',
             'inqryDiv': '1',
             'inqryBgnDt': date_start,
             'inqryEndDt': date_end,
-            **order_ym,
         }
-        items = _fetch_all_pages(ENDPOINTS[endpoint_key], params)
+        items = _fetch_plan_pages(ENDPOINTS[endpoint_key], params, prev_day)
         print(f"    → {len(items)}건 수집, 키워드 필터링 중...")
 
         for item in items:
@@ -399,8 +433,9 @@ def collect_by_agencies(
                 param_name: agency,
             }
             if endpoint_key.startswith('plan_'):
-                params.update(_order_month_params(prev_day))
-            items = _fetch_all_pages(ENDPOINTS[endpoint_key], params)
+                items = _fetch_plan_pages(ENDPOINTS[endpoint_key], params, prev_day)
+            else:
+                items = _fetch_all_pages(ENDPOINTS[endpoint_key], params)
             for item in items:
                 # 키워드 2차 필터 (있는 경우)
                 if keywords:
